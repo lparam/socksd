@@ -1,0 +1,25 @@
+{
+   <libuv_uv_write2>
+   Memcheck:Param
+   sendmsg(msg.msg_control)
+   obj:/lib/x86_64-linux-gnu/libpthread-2.19.so
+   fun:uv__write
+   fun:uv_write2
+   fun:ipc_connection_cb
+   fun:uv__server_io
+   fun:uv__io_poll
+   fun:uv_run
+   fun:start_connection_dispatching
+   fun:main
+}
+
+{
+   <insert_a_suppression_name_here>
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:calloc
+   fun:_dl_allocate_tls
+   fun:pthread_create@@GLIBC_2.2.5
+   fun:uv_thread_create
+   fun:main
+}

@@ -1,0 +1,6 @@
+[submodule "3rd/libuv"]
+	path = 3rd/libuv
+	url = https://github.com/libuv/libuv
+[submodule "3rd/udns"]
+	path = 3rd/udns
+	url = https://github.com/lparam/udns

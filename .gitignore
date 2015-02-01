@@ -1,0 +1,16 @@
+
+# Ignore vim cache
+*.swp
+
+*.a
+*.so
+
+/core
+/vgcore*
+*.o
+.ycm_extra_conf.pyc
+/cscope*
+/*.html
+tags
+
+/socksd
