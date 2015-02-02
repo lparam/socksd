@@ -65,12 +65,12 @@ all: libuv udns socksd
 	git submodule update --init
 
 3rd/libuv/Makefile: | 3rd/libuv/autogen.sh
-	cd 3rd/libuv && ./autogen.sh && ./configure && $(MAKE)
+	@cd 3rd/libuv && ./autogen.sh && ./configure && $(MAKE)
 
 libuv: 3rd/libuv/Makefile
 
 udns:
-	cd 3rd/udns && ./configure && make
+	@cd 3rd/udns && ./configure && make
 
 socksd: \
 	src/util.o \

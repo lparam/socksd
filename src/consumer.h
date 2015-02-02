@@ -49,6 +49,6 @@ struct ipc_server_ctx {
 uv_loop_t *listener_event_loops;
 uv_async_t *listener_async_handles;
 uv_barrier_t *listeners_created_barrier;
-void connection_consumer_start(void *arg);
+void consumer_start(void *arg);
 
 #endif // for #ifndef _CONSUMER_H

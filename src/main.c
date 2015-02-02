@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <getopt.h>
+#include <assert.h>
 
 #include <uv.h>
 
@@ -191,11 +192,11 @@ main(int argc, char *argv[]) {
             ctx->nameservers = nameservers;
             ctx->nameserver_num = nameserver_num;
             rc = uv_sem_init(&ctx->semaphore, 0);
-            rc = uv_thread_create(&ctx->thread_id, connection_consumer_start, ctx);
+            rc = uv_thread_create(&ctx->thread_id, consumer_start, ctx);
         }
 
         uv_barrier_wait(listeners_created_barrier);
-        start_connection_dispatching(&bind_addr, servers, concurrency);
+        dispatcher_start(&bind_addr, servers, concurrency);
 
         free(listener_event_loops);
         free(listener_async_handles);

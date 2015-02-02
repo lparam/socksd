@@ -55,7 +55,7 @@ ipc_connect_cb(uv_connect_t *req, int status) {
 }
 
 static void
-connection_consumer_close(uv_async_t *handle) {
+consumer_close(uv_async_t *handle) {
     struct server_ctx *ctx;
     ctx = container_of(handle, struct server_ctx, async_handle);
     uv_close((uv_handle_t*) &ctx->server_handle, NULL);
@@ -77,7 +77,7 @@ get_listen_handle(uv_loop_t *loop, uv_stream_t *server_handle) {
 }
 
 void
-connection_consumer_start(void *arg) {
+consumer_start(void *arg) {
     uv_loop_t *loop;
     struct server_ctx *ctx;
 
@@ -93,7 +93,7 @@ connection_consumer_start(void *arg) {
 
     uv_barrier_wait(listeners_created_barrier);
 
-    uv_async_init(loop, &ctx->async_handle, connection_consumer_close);
+    uv_async_init(loop, &ctx->async_handle, consumer_close);
     uv_unref((uv_handle_t*)&ctx->async_handle);
 
     /* Wait until the dispatcher thread is ready. */

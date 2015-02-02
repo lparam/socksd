@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <string.h>
 #include <assert.h>
 
 #include "uv.h"
@@ -38,10 +39,11 @@ ipc_connection_cb(uv_stream_t* ipc_pipe, int status) {
     sc = container_of(ipc_pipe, struct ipc_server_ctx, ipc_pipe);
     pc = calloc(1, sizeof(*pc));
 
-    if (ipc_pipe->type == UV_TCP)
+    if (ipc_pipe->type == UV_TCP) {
         uv_tcp_init(loop, (uv_tcp_t*) &pc->peer_handle);
-    else if (ipc_pipe->type == UV_NAMED_PIPE)
+    } else if (ipc_pipe->type == UV_NAMED_PIPE) {
         uv_pipe_init(loop, (uv_pipe_t*) &pc->peer_handle, 1);
+    }
 
     uv_accept(ipc_pipe, (uv_stream_t*) &pc->peer_handle);
     uv_write2(&pc->write_req,
@@ -70,7 +72,8 @@ dispatcher_signal_cb(uv_signal_t *handle, int signum) {
 }
 
 void
-start_connection_dispatching(struct sockaddr *addr, struct server_ctx *servers, uint32_t num_servers) {
+dispatcher_start(struct sockaddr *addr, struct server_ctx *servers, uint32_t num_servers) {
+    int rc;
     unsigned int i;
     uv_loop_t *loop;
     uv_signal_t int_signal;
@@ -83,7 +86,11 @@ start_connection_dispatching(struct sockaddr *addr, struct server_ctx *servers, 
     ctx.servers = servers;
 
     uv_tcp_init(loop, (uv_tcp_t*) &ctx.server_handle);
-    uv_tcp_bind((uv_tcp_t*) &ctx.server_handle, (const struct sockaddr*)addr, 0);
+    rc = uv_tcp_bind((uv_tcp_t*) &ctx.server_handle, (const struct sockaddr*)addr, 0);
+    if (rc || errno) {
+        LOGE("listen error: %s", rc ? uv_strerror(rc) : strerror(errno));
+        exit(1);
+    }
 
     char ip[INET6_ADDRSTRLEN + 1];
     int port = ip_name(addr, ip, sizeof(ip));
@@ -91,7 +98,7 @@ start_connection_dispatching(struct sockaddr *addr, struct server_ctx *servers, 
 
     uv_pipe_init(loop, &ctx.ipc_pipe, 1);
     unlink(IPC_PIPE_NAME);
-    int rc = uv_pipe_bind(&ctx.ipc_pipe, IPC_PIPE_NAME);
+    rc = uv_pipe_bind(&ctx.ipc_pipe, IPC_PIPE_NAME);
     if (rc) {
         LOGE("create pipe error: %s", uv_strerror(rc));
         exit(1);
