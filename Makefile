@@ -62,15 +62,20 @@ include $(TOPDIR)/config.mk
 all: libuv udns socksd
 
 3rd/libuv/autogen.sh:
-	git submodule update --init
+	$(Q)git submodule update --init
 
 3rd/libuv/Makefile: | 3rd/libuv/autogen.sh
-	@cd 3rd/libuv && ./autogen.sh && ./configure && $(MAKE)
+	$(Q)cd 3rd/libuv && ./autogen.sh && ./configure && $(MAKE)
 
 libuv: 3rd/libuv/Makefile
 
-udns:
-	@cd 3rd/udns && ./configure && make
+3rd/udns/configure:
+	$(Q)git submodule update --init
+
+3rd/udns/Makefile: | 3rd/udns/configure
+	$(Q)cd 3rd/udns && ./configure && $(MAKE)
+
+udns: 3rd/udns/Makefile
 
 socksd: \
 	src/util.o \
@@ -89,5 +94,5 @@ clean:
 	| xargs rm -f
 
 distclean: clean
-	@cd 3rd/libuv && make distclean
-	@cd 3rd/udns && make distclean
+	$(Q)cd 3rd/libuv && make distclean
+	$(Q)cd 3rd/udns && make distclean
