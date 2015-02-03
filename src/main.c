@@ -7,25 +7,35 @@
 #include <uv.h>
 
 #include "util.h"
+#include "logger.h"
 #include "resolver.h"
-#include "socksd.h"
 #include "consumer.h"
 #include "dispatcher.h"
+#include "daemon.h"
+#include "socksd.h"
 
 
 #define MAX_DNS_NUM 4
 
-static uint16_t port = 1080;
+extern int signal_process(char *signal, const char *pidfile);
+
+static int daemon_mode = 1;
 static int concurrency = 0;
 static int nameserver_num = 0;
 static char *nameservers[MAX_DNS_NUM];
+static char *local_addr = "0.0.0.0:1082";
+static char *pidfile = "socksd.pid";
+static char *xsignal;
+static struct signal_ctx signals[3];
 
-static const char *_optString = "c:d:p:t:Vvh";
+static const char *_optString = "l:c:d:p:t:s:nVvh";
 static const struct option _lopts[] = {
     { "",        required_argument,   NULL, 'p' },
     { "",        required_argument,   NULL, 'c' },
     { "",        required_argument,   NULL, 'd' },
     { "",        required_argument,   NULL, 't' },
+    { "",        required_argument,   NULL, 's' },
+    { "",        no_argument,   NULL, 'n' },
     { "version", no_argument,   NULL, 'v' },
     { "help",    no_argument,   NULL, 'h' },
     { "",        no_argument,   NULL, 'V' },
@@ -35,13 +45,16 @@ static const struct option _lopts[] = {
 static void
 print_usage(const char *prog) {
     printf("socksd Version: %s Maintained by Ken <ken.i18n@gmail.com>\n", SOCKSD_VER);
-    printf("Usage: %s [-p port] [-c concurrency] [-t timeout] [-hvV]\n\n", prog);
+    printf("Usage: %s [-l bind] [-p pidfile] [-c concurrency] [-t timeout] -s [signal] [-nhvV]\n\n", prog);
     printf("Options:\n");
     puts("  -h, --help\t\t : this help\n"
-         "  -p <port>\t\t : server port\n"
+         "  -l <bind address>\t : bind address:port default(0.0.0.0:1082)\n"
          "  -c <concurrency>\t : worker threads\n"
          "  -d <dns>\t\t : name servers for internal DNS resolver\n"
+         "  -p <pidfile>\t\t : pid file path (default: ./socksd.pid)\n"
          "  -t <timeout>\t\t : connection timeout in senconds\n"
+	     "  -s <signal>\t\t : send signal to socksd: quit, stop\n"
+	     "  -n\t\t\t : non daemon mode\n"
          "  -v, --version\t\t : show version\n"
          "  -V \t\t\t : verbose mode\n");
 
@@ -62,6 +75,9 @@ parse_opts(int argc, char *argv[]) {
         case '?':
             print_usage(argv[0]);
             break;
+        case 'l':
+            local_addr = optarg;
+            break;
         case 'c':
             concurrency = strtol(optarg, NULL, 10);
             break;
@@ -71,8 +87,20 @@ parse_opts(int argc, char *argv[]) {
             }
             break;
         case 'p':
-            port = strtol(optarg, NULL, 10);
+            pidfile = optarg;
             break;
+		case 'n':
+            daemon_mode = 0;
+			break;
+		case 's':
+            xsignal = optarg;
+            if (strcmp(xsignal, "stop") == 0
+              || strcmp(xsignal, "quit") == 0) {
+                break;
+            }
+            fprintf(stderr, "invalid option: -s %s\n", xsignal);
+			print_usage(argv[0]);
+			break;
         case 't':
             idle_timeout = strtol(optarg, NULL, 10) * 1000;
             break;
@@ -102,10 +130,12 @@ close_loop(uv_loop_t *loop) {
 
 static void
 signal_cb(uv_signal_t *handle, int signum) {
-    if (signum == SIGINT) {
-        LOGI("Received SIGINT, scheduling shutdown...");
-
-        uv_signal_stop(handle);
+    if (signum == SIGINT || signum == SIGQUIT) {
+        char *name = signum == SIGINT ? "SIGINT" : "SIGQUIT";
+        logger_log(LOG_INFO, "Received %s, scheduling shutdown...", name);
+        for (int i = 0; i < 2; i++) {
+            uv_signal_stop(&signals[i].sig);
+        }
 
         struct resolver_context *res = handle->loop->data;
         resolver_shutdown(res);
@@ -113,11 +143,27 @@ signal_cb(uv_signal_t *handle, int signum) {
         uv_tcp_t *server = handle->data;
         uv_close((uv_handle_t*)server, NULL);
     }
+    if (signum == SIGTERM) {
+        logger_log(LOG_INFO, "Received SIGTERM, scheduling shutdown...");
+        exit(0);
+    }
+}
+
+void
+setup_signal(uv_loop_t *loop, uv_signal_cb cb, void *data) {
+    signals[0].signum = SIGINT;
+    signals[1].signum = SIGQUIT;
+    signals[2].signum = SIGTERM;
+    for (int i = 0; i < 2; i++) {
+        signals[i].sig.data = data;
+        uv_signal_init(loop, &signals[i].sig);
+        uv_signal_start(&signals[i].sig, cb, signals[i].signum);
+    }
 }
 
 static void
 init(void) {
-    env_resolver = getenv("RESOLVER");
+    logger_init(daemon_mode);
 
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
@@ -139,14 +185,27 @@ main(int argc, char *argv[]) {
 
     parse_opts(argc, argv);
 
+    if (xsignal) {
+        return signal_process(xsignal, pidfile);
+    }
+
     init();
+
+    if (daemon_mode) {
+        if (daemonize()) {
+            return 1;
+        }
+        if (already_running(pidfile)) {
+            logger_stderr("socksd already running.");
+            return 1;
+        }
+    }
 
     uv_loop = uv_default_loop();
 
-    char addr[16] = {0};
-    snprintf(addr, sizeof addr, "0.0.0.0:%u", port);
-    rc = resolve_addr(addr, &bind_addr);
+    rc = resolve_addr(local_addr, &bind_addr);
     if (rc) {
+        logger_stderr("invalid local address");
         return 1;
     }
 
@@ -156,12 +215,9 @@ main(int argc, char *argv[]) {
         rc = uv_tcp_bind(&server, &bind_addr, 0);
         rc = uv_listen((uv_stream_t*)&server, 128, client_accept_cb);
         if (rc == 0) {
-            LOGI("listening at port %u", port);
+            logger_log(LOG_INFO, "listening at %s", local_addr);
 
-            uv_signal_t sigint;
-            sigint.data = &server;
-            uv_signal_init(uv_loop, &sigint);
-            uv_signal_start(&sigint, signal_cb, SIGINT);
+            setup_signal(uv_loop, signal_cb, &server);
 
             struct resolver_context *res = resolver_init(uv_loop, MODE_IPV4,
               nameserver_num == 0 ? NULL : nameservers, nameserver_num);
@@ -173,7 +229,7 @@ main(int argc, char *argv[]) {
             resolver_destroy(res);
 
         } else {
-            LOGE("listen error: %s", uv_strerror(rc));
+            logger_stderr("listen error: %s", uv_strerror(rc));
         }
     } else {
         listener_event_loops = calloc(concurrency, sizeof(uv_loop_t));
@@ -203,6 +259,10 @@ main(int argc, char *argv[]) {
         free(listeners_created_barrier);
         free(service_handle);
         free(servers);
+    }
+
+    if (daemon_mode) {
+        delete_pidfile(pidfile);
     }
 
     return 0;
