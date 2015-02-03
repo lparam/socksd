@@ -12,6 +12,7 @@
 #include "udns.h"
 
 #include "util.h"
+#include "logger.h"
 #include "resolver.h"
 
 
@@ -88,7 +89,7 @@ dns_query_a4_cb(struct dns_ctx *dns, struct dns_rr_a4 *result, void *data) {
 
     if (result == NULL) {
         if (verbose) {
-            LOGE("IPv4 resolver: %s", dns_strerror(dns_status(dns)));
+            logger_log(LOG_ERR, "IPv4 resolver: %s", dns_strerror(dns_status(dns)));
         }
     } else if (result->dnsa4_nrr > 0) {
         query->responses = realloc(query->responses, (query->response_count + result->dnsa4_nrr) * sizeof(struct sockaddr *));
@@ -115,7 +116,7 @@ dns_query_a6_cb(struct dns_ctx *dns, struct dns_rr_a6 *result, void *data) {
 
     if (result == NULL) {
         if (verbose) {
-            LOGE("IPv6 resolver: %s", dns_strerror(dns_status(dns)));
+            logger_log(LOG_ERR, "IPv6 resolver: %s", dns_strerror(dns_status(dns)));
         }
     } else if (result->dnsa6_nrr > 0) {
         query->responses = realloc(query->responses, (query->response_count + result->dnsa6_nrr) * sizeof(struct sockaddr *));
@@ -158,7 +159,7 @@ udns_poll_cb(uv_poll_t *watcher, int status, int events) {
         uint64_t now = uv_now(watcher->loop);
         dns_ioevent(dns, now);
     } else {
-        LOGE("poll error: %s", uv_strerror(status));
+        logger_log(LOG_ERR, "poll error: %s", uv_strerror(status));
     }
 }
 
@@ -236,14 +237,14 @@ resolver_query(struct resolver_context *ctx, const char *host, dns_host_callback
     if (mode != MODE_IPV6) {
         query->queries[0] = dns_submit_a4(dns, host, 0, dns_query_a4_cb, query);
         if (query->queries[0] == NULL) {
-            LOGE("Failed to submit DNS query: %s", dns_strerror(dns_status(dns)));
+            logger_log(LOG_ERR, "Failed to submit DNS query: %s", dns_strerror(dns_status(dns)));
         }
     }
 
     if (mode != MODE_IPV4) {
         query->queries[1] = dns_submit_a6(dns, host, 0, dns_query_a6_cb, query);
         if (query->queries[1] == NULL) {
-            LOGE("Failed to submit DNS query: %s", dns_strerror(dns_status(dns)));
+            logger_log(LOG_ERR, "Failed to submit DNS query: %s", dns_strerror(dns_status(dns)));
         }
     }
 

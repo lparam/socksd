@@ -7,11 +7,13 @@
 #include "uv.h"
 
 #include "util.h"
+#include "logger.h"
 #include "dispatcher.h"
 #include "consumer.h"
 
 
 extern void close_loop(uv_loop_t *loop);
+extern void setup_signal(uv_loop_t *loop, uv_signal_cb cb, void *data);
 
 static void
 ipc_close_cb(uv_handle_t* handle) {
@@ -59,15 +61,20 @@ ipc_connection_cb(uv_stream_t* ipc_pipe, int status) {
 }
 
 static void
-dispatcher_signal_cb(uv_signal_t *handle, int signum) {
+signal_cb(uv_signal_t *handle, int signum) {
     struct ipc_server_ctx *ipc = handle->data;
-    if (signum == SIGINT) {
-        LOGI("Received SIGINT, scheduling shutdown...");
+    if (signum == SIGINT || signum == SIGQUIT) {
+        char *name = signum == SIGINT ? "SIGINT" : "SIGQUIT";
+        logger_log(LOG_INFO, "Received %s, scheduling shutdown...", name);
         for (int i = 0; i < ipc->num_servers; i++) {
             struct server_ctx *server = &ipc->servers[i];
             uv_async_send(&server->async_handle);
         }
         uv_stop(handle->loop);
+    }
+    if (signum == SIGTERM) {
+        logger_log(LOG_WARNING, "Received SIGTERM, scheduling shutdown...");
+        exit(0);
     }
 }
 
@@ -76,7 +83,6 @@ dispatcher_start(struct sockaddr *addr, struct server_ctx *servers, uint32_t num
     int rc;
     unsigned int i;
     uv_loop_t *loop;
-    uv_signal_t int_signal;
     struct ipc_server_ctx ctx;
 
     loop = uv_default_loop();
@@ -88,19 +94,19 @@ dispatcher_start(struct sockaddr *addr, struct server_ctx *servers, uint32_t num
     uv_tcp_init(loop, (uv_tcp_t*) &ctx.server_handle);
     rc = uv_tcp_bind((uv_tcp_t*) &ctx.server_handle, (const struct sockaddr*)addr, 0);
     if (rc || errno) {
-        LOGE("listen error: %s", rc ? uv_strerror(rc) : strerror(errno));
+        logger_stderr("listen error: %s", rc ? uv_strerror(rc) : strerror(errno));
         exit(1);
     }
 
     char ip[INET6_ADDRSTRLEN + 1];
     int port = ip_name(addr, ip, sizeof(ip));
-    LOGI("listening on %s:%d", ip, port);
+    logger_log(LOG_INFO, "listening on %s:%d", ip, port);
 
     uv_pipe_init(loop, &ctx.ipc_pipe, 1);
     unlink(IPC_PIPE_NAME);
     rc = uv_pipe_bind(&ctx.ipc_pipe, IPC_PIPE_NAME);
     if (rc) {
-        LOGE("create pipe error: %s", uv_strerror(rc));
+        logger_stderr("create pipe error: %s", uv_strerror(rc));
         exit(1);
     }
     uv_listen((uv_stream_t*) &ctx.ipc_pipe, 128, ipc_connection_cb);
@@ -109,9 +115,7 @@ dispatcher_start(struct sockaddr *addr, struct server_ctx *servers, uint32_t num
         uv_sem_post(&servers[i].semaphore);
     }
 
-    uv_signal_init(loop, &int_signal);
-    int_signal.data = &ctx;
-    uv_signal_start(&int_signal, dispatcher_signal_cb, SIGINT);
+    setup_signal(loop, signal_cb, &ctx);
 
     uv_run(loop, UV_RUN_DEFAULT);
 

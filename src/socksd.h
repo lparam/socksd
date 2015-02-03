@@ -65,6 +65,5 @@ void close_loop(uv_loop_t *loop);
 
 int verbose;
 uint16_t idle_timeout;
-const char *env_resolver;
 
 #endif // for #ifndef _SOCKSD_H

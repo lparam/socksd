@@ -4,6 +4,11 @@
 #include "uv.h"
 #include "consumer.h"
 
+struct signal_ctx {
+  uv_signal_t sig;
+  int signum;
+};
+
 struct ipc_peer_ctx {
     handle_storage_t peer_handle;
     uv_write_t write_req;
