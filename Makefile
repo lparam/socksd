@@ -79,9 +79,12 @@ udns: 3rd/udns/Makefile
 
 socksd: \
 	src/util.o \
+	src/logger.o \
 	src/resolver.o \
 	src/consumer.o \
 	src/dispatcher.o \
+	src/daemon.o \
+	src/signal.o \
 	src/client.o \
 	src/remote.o \
 	src/main.o
@@ -96,3 +99,6 @@ clean:
 distclean: clean
 	$(Q)cd 3rd/libuv && make distclean
 	$(Q)cd 3rd/udns && make distclean
+
+install:
+	$(Q)cp socksd /usr/local/bin

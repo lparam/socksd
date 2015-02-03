@@ -6,6 +6,7 @@
 #include <uv.h>
 
 #include "util.h"
+#include "logger.h"
 #include "socks.h"
 #include "socksd.h"
 
@@ -105,7 +106,7 @@ send_to_client(struct client_context *client, char *buf, int buflen) {
     write_req->data = client;
     int rc = uv_write(write_req, &client->handle.stream, &reply, 1, client_send_cb);
     if (rc) {
-        LOGE("write to client error: %s", uv_strerror(rc));
+        logger_log(LOG_ERR, "write to client error: %s", uv_strerror(rc));
     }
 }
 
@@ -169,7 +170,7 @@ request_start(struct client_context *client) {
     struct remote_context *remote = client->remote;
 
     if (request->cmd != S5_CMD_CONNECT) {
-        LOGE("unsupported cmd: 0x%02x", request->cmd);
+        logger_log(LOG_ERR, "unsupported cmd: 0x%02x", request->cmd);
         request_ack(client, S5_REP_CMD_NOT_SUPPORTED);
         return;
     }
@@ -177,7 +178,7 @@ request_start(struct client_context *client) {
     char addr[256] = {0};
     int rc = analyse_request_addr(client->remote, request, addr);
     if (rc) {
-        LOGE("unsupported address type: 0x%02x", request->atyp);
+        logger_log(LOG_ERR, "unsupported address type: 0x%02x", request->atyp);
         request_ack(client, S5_REP_ADDRESS_TYPE_NOT_SUPPORTED);
         return;
     }
@@ -189,7 +190,7 @@ request_start(struct client_context *client) {
         case S5_ATYP_IPV4:
         case S5_ATYP_IPV6:
             if (verbose) {
-                LOGI("connect to %s", addr);
+                logger_log(LOG_INFO, "connect to %s", addr);
             }
             connect_to_remote(remote);
             break;
@@ -221,7 +222,7 @@ client_send_cb(uv_write_t *req, int status) {
 
     } else {
         if (verbose) {
-            LOGE("send to client failed: %s", uv_strerror(status));
+            logger_log(LOG_ERR, "send to client failed: %s", uv_strerror(status));
         }
     }
 
@@ -239,7 +240,7 @@ client_recv_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
             if (verify_methods(client->buf, nread)) {
                 handshake(client);
             } else {
-                LOGE("invalid method packet");
+                logger_log(LOG_ERR, "invalid method packet");
                 close_client(client);
                 close_remote(remote);
             }
@@ -248,7 +249,7 @@ client_recv_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
             if (verify_request(client->buf, nread)) {
                 request_start(client);
             } else {
-                LOGE("invalid request packet");
+                logger_log(LOG_ERR, "invalid request packet");
                 close_client(client);
                 close_remote(remote);
             }
@@ -285,7 +286,7 @@ client_accept_cb(uv_stream_t *server, int status) {
         client->handle.stream.data = client;
         rc = uv_read_start(&client->handle.stream, client_alloc_cb, client_recv_cb);
     } else {
-        LOGE("accept error: %s", uv_strerror(rc));
+        logger_log(LOG_ERR, "accept error: %s", uv_strerror(rc));
         close_client(client);
         close_remote(remote);
     }

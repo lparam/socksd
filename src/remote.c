@@ -7,6 +7,7 @@
 #include <uv.h>
 
 #include "util.h"
+#include "logger.h"
 #include "resolver.h"
 #include "socks.h"
 #include "socksd.h"
@@ -19,7 +20,7 @@ static void remote_recv_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
 static void
 remote_timer_expire(uv_timer_t *handle) {
     if (verbose) {
-        LOGI("connection timeout");
+        logger_log(LOG_INFO, "connection timeout");
     }
     struct remote_context *remote = handle->data;
     request_ack(remote->client, S5_REP_TTL_EXPIRED);
@@ -102,7 +103,7 @@ remote_connect_cb(uv_connect_t *req, int status) {
         if (status != UV_ECANCELED) {
             char addrbuf[INET6_ADDRSTRLEN + 1];
             ip_name(&remote->addr.addr, addrbuf, sizeof(addrbuf));
-            LOGE("connect to %s failed: %s", addrbuf, uv_strerror(status));
+            logger_log(LOG_ERR, "connect to %s failed: %s", addrbuf, uv_strerror(status));
             request_ack(client, S5_REP_HOST_UNREACHABLE);
         }
     }
@@ -129,7 +130,7 @@ connect_to_remote(struct remote_context *remote) {
     if (rc) {
         char addrbuf[INET6_ADDRSTRLEN + 1];
         ip_name(&remote->addr.addr, addrbuf, sizeof(addrbuf));
-        LOGE("connect to %s error: %s", addrbuf, uv_strerror(rc));
+        logger_log(LOG_ERR, "connect to %s error: %s", addrbuf, uv_strerror(rc));
         request_ack(remote->client, S5_REP_NETWORK_UNREACHABLE);
     }
 }
@@ -156,7 +157,7 @@ resolve_cb(struct sockaddr *addr, void *data) {
         if (verbose) {
             char addrbuf[INET6_ADDRSTRLEN + 1];
             uv_ip4_name(&remote->addr.addr4, addrbuf, sizeof(addrbuf));
-            LOGI("connect to %s", addrbuf);
+            logger_log(LOG_INFO, "connect to %s", addrbuf);
         }
         connect_to_remote(remote);
     }
@@ -182,7 +183,7 @@ remote_send_cb(uv_write_t *req, int status) {
         if (verbose) {
             char addrbuf[INET6_ADDRSTRLEN + 1];
             int port = ip_name(&remote->addr.addr, addrbuf, sizeof(addrbuf));
-            LOGE("send to %s:%d failed: %s", addrbuf, port, uv_strerror(status));
+            logger_log(LOG_ERR, "send to %s:%d failed: %s", addrbuf, port, uv_strerror(status));
         }
     }
 }
@@ -202,7 +203,7 @@ remote_recv_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
         if (nread != UV_EOF && verbose) {
             char addrbuf[INET6_ADDRSTRLEN + 1];
             int port = ip_name(&remote->addr.addr, addrbuf, sizeof(addrbuf));
-            LOGE("receive from %s:%d failed: %s", addrbuf, port, uv_strerror(nread));
+            logger_log(LOG_ERR, "receive from %s:%d failed: %s", addrbuf, port, uv_strerror(nread));
         }
         close_client(client);
         close_remote(remote);

@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -10,7 +11,7 @@
 
 #include "uv.h"
 
-#include "util.h"
+#include "logger.h"
 
 int
 resolve_addr(const char *buf, struct sockaddr *addr) {
@@ -20,7 +21,7 @@ resolve_addr(const char *buf, struct sockaddr *addr) {
     long port;
 
 	if ((p = strrchr(tmp, ':')) == NULL) {
-		LOGE("Address must contain port number: %s", tmp);
+		logger_log(LOG_ERR, "Address must contain port number: %s", tmp);
         rc = 1;
         goto err;
 	}
@@ -28,7 +29,7 @@ resolve_addr(const char *buf, struct sockaddr *addr) {
 
 	port = strtol(p, NULL, 10);
 	if ((port <= 0) || (port >= 65536)) {
-		LOGE("Invalid port number: %s", p);
+		logger_log(LOG_ERR, "Invalid port number: %s", p);
         rc = 1;
         goto err;
 	}

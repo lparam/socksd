@@ -4,6 +4,7 @@
 
 *.a
 *.so
+*.pid
 
 /core
 /vgcore*
