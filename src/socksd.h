@@ -20,8 +20,11 @@ struct client_context {
         uv_udp_t udp;
     } handle;
     uv_write_t write_req;
+    struct sockaddr addr;
     struct remote_context *remote;
+    uint8_t cmd;
     char buf[2048];
+    char target_addr[256];
 };
 
 struct remote_context {
@@ -32,15 +35,11 @@ struct remote_context {
         uv_tcp_t tcp;
         uv_udp_t udp;
     } handle;
-    union {
-        struct sockaddr addr;
-        struct sockaddr_in addr4;
-        struct sockaddr_in6 addr6;
-    } addr;
     uv_write_t write_req;
     uv_timer_t *timer;
     uv_connect_t connect_req;
     struct dns_query *addr_query;
+    struct sockaddr addr;
     struct client_context *client;
     char buf[2048];
     uint16_t idle_timeout;
@@ -55,7 +54,7 @@ void client_accept_cb(uv_stream_t *server, int status);
 
 struct remote_context * new_remote(uint16_t timeout);
 void close_remote(struct remote_context *remote);
-void resolve_remote(struct remote_context *remote, char *host);
+void resolve_remote(struct remote_context *remote, char *host, uint16_t port);
 void connect_to_remote(struct remote_context *remote);
 void receive_from_remote(struct remote_context *remote);
 void forward_to_remote(struct remote_context *remote, char *buf, int buflen);

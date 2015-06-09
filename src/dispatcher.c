@@ -6,6 +6,7 @@
 
 #include "uv.h"
 
+#include "common.h"
 #include "util.h"
 #include "logger.h"
 #include "dispatcher.h"
@@ -67,7 +68,7 @@ signal_cb(uv_signal_t *handle, int signum) {
         char *name = signum == SIGINT ? "SIGINT" : "SIGQUIT";
         logger_log(LOG_INFO, "Received %s, scheduling shutdown...", name);
         for (int i = 0; i < ipc->num_servers; i++) {
-            struct server_ctx *server = &ipc->servers[i];
+            struct server_context *server = &ipc->servers[i];
             uv_async_send(&server->async_handle);
         }
         uv_stop(handle->loop);
@@ -79,7 +80,7 @@ signal_cb(uv_signal_t *handle, int signum) {
 }
 
 void
-dispatcher_start(struct sockaddr *addr, struct server_ctx *servers, uint32_t num_servers) {
+dispatcher_start(struct sockaddr *addr, struct server_context *servers, uint32_t num_servers) {
     int rc;
     unsigned int i;
     uv_loop_t *loop;

@@ -4,11 +4,12 @@
 #include <getopt.h>
 #include <assert.h>
 
-#include <uv.h>
-
+#include "uv.h"
 #include "util.h"
+#include "common.h"
 #include "logger.h"
 #include "resolver.h"
+#include "udprelay.h"
 #include "consumer.h"
 #include "dispatcher.h"
 #include "daemon.h"
@@ -23,7 +24,7 @@ static int daemon_mode = 1;
 static int concurrency = 0;
 static int nameserver_num = 0;
 static char *nameservers[MAX_DNS_NUM];
-static char *local_addr = "0.0.0.0:1082";
+static char *local_addrbuf = "0.0.0.0:1080";
 static char *pidfile = "socksd.pid";
 static char *xsignal;
 static struct signal_ctx signals[3];
@@ -48,7 +49,7 @@ print_usage(const char *prog) {
     printf("Usage: %s [-l bind] [-p pidfile] [-c concurrency] [-t timeout] -s [signal] [-nhvV]\n\n", prog);
     printf("Options:\n");
     puts("  -h, --help\t\t : this help\n"
-         "  -l <bind address>\t : bind address:port default(0.0.0.0:1082)\n"
+         "  -l <bind address>\t : bind address:port default(0.0.0.0:1080)\n"
          "  -c <concurrency>\t : worker threads\n"
          "  -d <dns>\t\t : name servers for internal DNS resolver\n"
          "  -p <pidfile>\t\t : pid file path (default: ./socksd.pid)\n"
@@ -76,7 +77,7 @@ parse_opts(int argc, char *argv[]) {
             print_usage(argv[0]);
             break;
         case 'l':
-            local_addr = optarg;
+            local_addrbuf = optarg;
             break;
         case 'c':
             concurrency = strtol(optarg, NULL, 10);
@@ -139,9 +140,9 @@ signal_cb(uv_signal_t *handle, int signum) {
 
         struct resolver_context *res = handle->loop->data;
         resolver_shutdown(res);
-
-        uv_tcp_t *server = handle->data;
-        uv_close((uv_handle_t*)server, NULL);
+        struct server_context *ctx = handle->data;
+        uv_close((uv_handle_t *)&ctx->tcp, NULL);
+        udprelay_close(ctx);
     }
     if (signum == SIGTERM) {
         logger_log(LOG_INFO, "Received SIGTERM, scheduling shutdown...");
@@ -180,8 +181,8 @@ init(void) {
 int
 main(int argc, char *argv[]) {
     int rc;
-    uv_loop_t *uv_loop;
-    struct sockaddr bind_addr;
+    uv_loop_t *loop;
+    struct sockaddr local_addr;
 
     parse_opts(argc, argv);
 
@@ -201,36 +202,44 @@ main(int argc, char *argv[]) {
         }
     }
 
-    uv_loop = uv_default_loop();
+    loop = uv_default_loop();
 
-    rc = resolve_addr(local_addr, &bind_addr);
+    rc = resolve_addr(local_addrbuf, &local_addr);
     if (rc) {
         logger_stderr("invalid local address");
         return 1;
     }
 
+    udprelay_init();
+
     if (concurrency <= 1) {
-        uv_tcp_t server;
-        uv_tcp_init(uv_loop, &server);
-        rc = uv_tcp_bind(&server, &bind_addr, 0);
-        rc = uv_listen((uv_stream_t*)&server, 128, client_accept_cb);
+        struct server_context ctx;
+        ctx.local_addr = &local_addr;
+        ctx.udprelay = 1;
+
+        uv_tcp_init(loop, &ctx.tcp);
+        rc = uv_tcp_bind(&ctx.tcp, &local_addr, 0);
+        rc = uv_listen((uv_stream_t*)&ctx.tcp, 128, client_accept_cb);
         if (rc == 0) {
-            logger_log(LOG_INFO, "listening at %s", local_addr);
+            logger_log(LOG_INFO, "listening at %s", local_addrbuf);
 
-            setup_signal(uv_loop, signal_cb, &server);
+            setup_signal(loop, signal_cb, &ctx);
 
-            struct resolver_context *res = resolver_init(uv_loop, MODE_IPV4,
+            struct resolver_context *res = resolver_init(loop, MODE_IPV4,
               nameserver_num == 0 ? NULL : nameservers, nameserver_num);
-            uv_loop->data = res;
+            loop->data = res;
 
-            uv_run(uv_loop, UV_RUN_DEFAULT);
+            udprelay_start(loop, &ctx);
 
-            close_loop(uv_loop);
+            uv_run(loop, UV_RUN_DEFAULT);
+
+            close_loop(loop);
             resolver_destroy(res);
 
         } else {
             logger_stderr("listen error: %s", uv_strerror(rc));
         }
+
     } else {
         listener_event_loops = calloc(concurrency, sizeof(uv_loop_t));
         listener_async_handles = calloc(concurrency, sizeof(uv_async_t));
@@ -238,12 +247,13 @@ main(int argc, char *argv[]) {
         uv_async_t *service_handle = malloc(sizeof(uv_async_t));
 
         uv_barrier_init(listeners_created_barrier, concurrency + 1);
-        uv_async_init(uv_loop, service_handle, NULL);
+        uv_async_init(loop, service_handle, NULL);
 
-        struct server_ctx *servers = calloc(concurrency, sizeof(servers[0]));
+        struct server_context *servers = calloc(concurrency, sizeof(servers[0]));
         for (int i = 0; i < concurrency; i++) {
-            struct server_ctx *ctx = servers + i;
+            struct server_context *ctx = servers + i;
             ctx->index = i;
+            ctx->udprelay = 1;
             ctx->accept_cb = client_accept_cb;
             ctx->nameservers = nameservers;
             ctx->nameserver_num = nameserver_num;
@@ -252,7 +262,7 @@ main(int argc, char *argv[]) {
         }
 
         uv_barrier_wait(listeners_created_barrier);
-        dispatcher_start(&bind_addr, servers, concurrency);
+        dispatcher_start(&local_addr, servers, concurrency);
 
         free(listener_event_loops);
         free(listener_async_handles);
