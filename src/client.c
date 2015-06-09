@@ -100,9 +100,9 @@ analyse_request_addr(struct socks5_request *req, struct sockaddr *dest, char *de
         }
         memcpy(&addr.addr4.sin_port, req->addr + 1 + namelen, portlen);
 
+        memcpy(dest_buf, req->addr + 1, namelen);
         memcpy(host, req->addr + 1, namelen);
         host[namelen] = '\0';
-        memcpy(dest_buf, req->addr + 1, namelen);
         uint16_t port = read_size((uint8_t*)(req->addr + 1 + namelen));
         sprintf(dest_buf, "%s:%u", dest_buf, port);
 

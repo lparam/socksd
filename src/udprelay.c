@@ -288,20 +288,31 @@ client_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *buf, const struc
         reset_timer(target);
 
         uint16_t port = (*(uint16_t *)(buf->base + 4 + addrlen - 2));
-        uint8_t *m = (uint8_t*)buf->base + 4 + addrlen + 2;
-        ssize_t mlen = nread - 4 - addrlen - 2;
+        uint8_t *m = (uint8_t*)buf->base;
+        ssize_t mlen = nread - 4 - addrlen;
+        memmove(m, m + 4 + addrlen, mlen);
+        /* dump_hex(buf->base, nread, "udp msg"); */
+        /* dump_hex(m, mlen, "udp data"); */
+
+        char addrbuf1[INET6_ADDRSTRLEN + 1] = {0};
+        char addrbuf2[INET6_ADDRSTRLEN + 1] = {0};
+        uint16_t p1 = 0,p2 = 0;
 
         switch (atyp) {
 
         case S5_ATYP_IPV4:
         case S5_ATYP_IPV6:
             target->header_len = dest_addr.sa_family == AF_INET ? IPV4_HEADER_LEN : IPV6_HEADER_LEN;
+            p1 = ip_name(addr, addrbuf1, sizeof addrbuf1);
+            p2 = ip_name(&dest_addr, addrbuf2, sizeof addrbuf2);
+            logger_log(LOG_INFO, "%s:%d -> %s:%d", addrbuf1, p1, addrbuf2, p2);
             forward_to_target(target, m, mlen);
             break;
 
         case S5_ATYP_HOST:
             target->buf = m;
             target->buflen = mlen;
+            logger_stderr("resolve: %s", host);
             resolve_target(target, host, port);
             break;
 

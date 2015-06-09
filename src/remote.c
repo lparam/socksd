@@ -18,10 +18,13 @@ static void remote_recv_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
 
 static void
 remote_timer_expire(uv_timer_t *handle) {
-    if (verbose) {
-        logger_log(LOG_INFO, "connection timeout");
-    }
     struct remote_context *remote = handle->data;
+    struct client_context *client = remote->client;
+    if (verbose) {
+        char addrbuf[INET6_ADDRSTRLEN + 1] = {0};
+        uint16_t port = ip_name(&client->addr, addrbuf, sizeof addrbuf);
+        logger_log(LOG_WARNING, "%s:%d <-> %s connection timeout", addrbuf, port, client->target_addr);
+    }
     request_ack(remote->client, S5_REP_TTL_EXPIRED);
 }
 

@@ -55,7 +55,7 @@ CFLAGS = \
 	-Wall \
 	$(PLATFORM_CFLAGS)
 
-# CFLAGS += -g
+CFLAGS += -g
 CFLAGS += -fomit-frame-pointer -fdata-sections -ffunction-sections
 
 EXTRA_CFLAGS =
