@@ -42,7 +42,7 @@ timer_close_cb(uv_handle_t *handle) {
 }
 
 struct remote_context *
-new_remote(uint16_t timeout) {
+new_remote(uint32_t timeout) {
     struct remote_context *remote = malloc(sizeof(*remote));
     memset(remote, 0, sizeof(*remote));
     remote->timer = malloc(sizeof(uv_timer_t));

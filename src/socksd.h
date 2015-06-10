@@ -42,7 +42,7 @@ struct remote_context {
     struct sockaddr addr;
     struct client_context *client;
     char buf[2048];
-    uint16_t idle_timeout;
+    uint32_t idle_timeout;
 };
 
 struct client_context * new_client();
@@ -52,7 +52,7 @@ void receive_from_client(struct client_context *client);
 void forward_to_client(struct client_context *client, char *buf, int buflen);
 void client_accept_cb(uv_stream_t *server, int status);
 
-struct remote_context * new_remote(uint16_t timeout);
+struct remote_context * new_remote(uint32_t timeout);
 void close_remote(struct remote_context *remote);
 void resolve_remote(struct remote_context *remote, char *host, uint16_t port);
 void connect_to_remote(struct remote_context *remote);
@@ -63,6 +63,6 @@ void reset_timer(struct remote_context *remote);
 void close_loop(uv_loop_t *loop);
 
 int verbose;
-uint16_t idle_timeout;
+uint32_t idle_timeout;
 
 #endif // for #ifndef _SOCKSD_H
