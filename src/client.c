@@ -56,6 +56,9 @@ verify_request(char *buf, ssize_t buflen) {
     struct socks5_request *req = (struct socks5_request *)buf;
 
     if (req->atyp == S5_ATYP_IPV4) {
+        if ((req->cmd == S5_CMD_CONNECT) && (strncmp(buf + 4, "\x0\x0\x0\x0", 4) == 0)) {
+            return 0;
+        }
         len = sizeof(struct socks5_request) + sizeof(struct in_addr) + 2;
     } else if (req->atyp == S5_ATYP_HOST) {
         uint8_t name_len = *(uint8_t *)(req->addr);
@@ -188,9 +191,6 @@ request_ack(struct client_context *client, enum s5_rep rep) {
         client->stage = S5_STAGE_TERMINATE;
     }
 
-    if (client->cmd == S5_CMD_UDP_ASSOCIATE) {
-        dump_hex(buf, buflen, "reply udp request");
-    }
     send_to_client(client, buf, buflen);
 }
 
@@ -224,7 +224,6 @@ request_start(struct client_context *client, char *buf, ssize_t buflen) {
     }
 
     if (request->cmd == S5_CMD_UDP_ASSOCIATE) {
-        dump_hex(buf, buflen, "udp request");
         request_ack(client, S5_REP_SUCCESSED);
         return;
     }
@@ -271,10 +270,11 @@ client_send_cb(uv_write_t *req, int status) {
         if (client->stage == S5_STAGE_FORWARD) {
             reset_timer(remote);
             receive_from_remote(remote);
-        } else if (client->stage == S5_STAGE_TERMINATE) {
+        } else if (client->cmd != S5_CMD_UDP_ASSOCIATE && client->stage == S5_STAGE_TERMINATE) {
             close_client(client);
             close_remote(remote);
         }
+        // TODO: stop timer when udp associate (keep connection)
 
     } else {
         char addrbuf[INET6_ADDRSTRLEN + 1] = {0};
