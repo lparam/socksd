@@ -188,6 +188,9 @@ request_ack(struct client_context *client, enum s5_rep rep) {
         client->stage = S5_STAGE_TERMINATE;
     }
 
+    if (client->cmd == S5_CMD_UDP_ASSOCIATE) {
+        dump_hex(buf, buflen, "reply udp request");
+    }
     send_to_client(client, buf, buflen);
 }
 
@@ -208,8 +211,8 @@ handshake(struct client_context *client) {
  *
  */
 static void
-request_start(struct client_context *client, char *req_buf) {
-    struct socks5_request *request = (struct socks5_request *)req_buf;
+request_start(struct client_context *client, char *buf, ssize_t buflen) {
+    struct socks5_request *request = (struct socks5_request *)buf;
     struct remote_context *remote = client->remote;
 
     client->cmd = request->cmd;
@@ -221,6 +224,7 @@ request_start(struct client_context *client, char *req_buf) {
     }
 
     if (request->cmd == S5_CMD_UDP_ASSOCIATE) {
+        dump_hex(buf, buflen, "udp request");
         request_ack(client, S5_REP_SUCCESSED);
         return;
     }
@@ -299,7 +303,7 @@ client_recv_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
             break;
         case S5_STAGE_REQUEST:
             if (verify_request(buf->base, nread)) {
-                request_start(client, buf->base);
+                request_start(client, buf->base, nread);
             } else {
                 logger_log(LOG_ERR, "invalid request packet");
                 close_client(client);

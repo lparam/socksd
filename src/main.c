@@ -254,6 +254,7 @@ main(int argc, char *argv[]) {
             struct server_context *ctx = servers + i;
             ctx->index = i;
             ctx->udprelay = 1;
+            ctx->local_addr = &local_addr;
             ctx->accept_cb = client_accept_cb;
             ctx->nameservers = nameservers;
             ctx->nameserver_num = nameserver_num;
@@ -270,6 +271,8 @@ main(int argc, char *argv[]) {
         free(service_handle);
         free(servers);
     }
+
+    udprelay_destroy();
 
     if (daemon_mode) {
         delete_pidfile(pidfile);

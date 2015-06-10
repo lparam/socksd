@@ -5,7 +5,6 @@
 #include <assert.h>
 
 #include "uv.h"
-
 #include "common.h"
 #include "util.h"
 #include "logger.h"
@@ -17,24 +16,24 @@ extern void close_loop(uv_loop_t *loop);
 extern void setup_signal(uv_loop_t *loop, uv_signal_cb cb, void *data);
 
 static void
-ipc_close_cb(uv_handle_t* handle) {
-    struct ipc_peer_ctx* ctx;
+ipc_close_cb(uv_handle_t *handle) {
+    struct ipc_peer_ctx *ctx;
     ctx = container_of(handle, struct ipc_peer_ctx, peer_handle);
     free(ctx);
 }
 
 static void
-ipc_write_cb(uv_write_t* req, int status) {
-    struct ipc_peer_ctx* ctx;
+ipc_write_cb(uv_write_t *req, int status) {
+    struct ipc_peer_ctx *ctx;
     ctx = container_of(req, struct ipc_peer_ctx, write_req);
     uv_close((uv_handle_t*) &ctx->peer_handle, ipc_close_cb);
 }
 
 static void
-ipc_connection_cb(uv_stream_t* ipc_pipe, int status) {
-    struct ipc_server_ctx* sc;
-    struct ipc_peer_ctx* pc;
-    uv_loop_t* loop;
+ipc_connection_cb(uv_stream_t *ipc_pipe, int status) {
+    struct ipc_server_ctx *sc;
+    struct ipc_peer_ctx *pc;
+    uv_loop_t *loop;
     uv_buf_t buf;
 
     loop = ipc_pipe->loop;
