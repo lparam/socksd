@@ -60,7 +60,7 @@ static void
 consumer_close(uv_async_t *handle) {
     struct server_context *ctx = container_of(handle, struct server_context, async_handle);
 
-    uv_close((uv_handle_t*) &ctx->tcp, NULL);
+    uv_close((uv_handle_t*) &ctx->server_handle, NULL);
     uv_close((uv_handle_t*) &ctx->async_handle, NULL);
 
     if (ctx->udprelay) {
