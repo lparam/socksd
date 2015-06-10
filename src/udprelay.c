@@ -2,7 +2,6 @@
 #include <string.h>
 
 #include "uv.h"
-
 #include "util.h"
 #include "logger.h"
 #include "common.h"
@@ -127,6 +126,7 @@ static void
 target_alloc_cb(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf) {
     struct target_context *target = handle->data;
     buf->base = malloc(suggested_size) + target->header_len;
+    memset(buf->base - target->header_len, 0, suggested_size);
     buf->len = suggested_size - target->header_len;
 }
 
@@ -172,24 +172,29 @@ target_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *buf, const struc
     if (nread > 0) {
         reset_timer(target);
         uint8_t *m = (uint8_t *)buf->base - target->header_len;
-        int header_len;
+        ssize_t mlen = target->header_len + nread;
 
         memcpy(m, "\x0\x0\x0", 3); // RSV + FRAG
         if (addr->sa_family == AF_INET) {
             struct sockaddr_in *addr4 = (struct sockaddr_in *)addr;
-            m[4] = 1;
+            m[3] = 1;
             memcpy(m + 4, &addr4->sin_addr, 4);
             memcpy(m + 4 + 4, &addr4->sin_port, 2);
-            header_len = 4 + 4 + 2;
         } else {
             struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *)addr;
-            m[4] = 4;
+            m[3] = 4;
             memcpy(m + 4, &addr6->sin6_addr, 16);
             memcpy(m + 4 + 16, &addr6->sin6_port, 2);
-            header_len = 4 + 16 + 2;
         }
 
-        forward_to_client(target, m, header_len + nread);
+        char addrbuf1[INET6_ADDRSTRLEN + 1] = {0};
+        char addrbuf2[INET6_ADDRSTRLEN + 1] = {0};
+        uint16_t p1 = 0,p2 = 0;
+        p1 = ip_name(addr, addrbuf1, sizeof addrbuf1);
+        p2 = ip_name(&target->client_addr, addrbuf2, sizeof addrbuf2);
+        logger_log(LOG_INFO, "%s:%d -> %s:%d", addrbuf1, p1, addrbuf2, p2);
+
+        forward_to_client(target, m, mlen);
 
     } else {
         free(buf->base - target->header_len);
@@ -251,6 +256,11 @@ client_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *buf, const struc
     if (nread > 0) {
         char host[256] = {0};
         struct sockaddr dest_addr;
+        uint8_t frag = (uint8_t)buf->base[2];
+        if (frag != 0) {
+            logger_log(LOG_ERR, "don't support frag: %d", frag);
+            goto err;
+        }
         uint8_t atyp = (uint8_t)buf->base[3];
         int addrlen = parse_target_address(atyp, buf->base + 4, &dest_addr, host);
         if (addrlen < 1) {
@@ -291,8 +301,6 @@ client_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *buf, const struc
         uint8_t *m = (uint8_t*)buf->base;
         ssize_t mlen = nread - 4 - addrlen;
         memmove(m, m + 4 + addrlen, mlen);
-        /* dump_hex(buf->base, nread, "udp msg"); */
-        /* dump_hex(m, mlen, "udp data"); */
 
         char addrbuf1[INET6_ADDRSTRLEN + 1] = {0};
         char addrbuf2[INET6_ADDRSTRLEN + 1] = {0};
@@ -312,7 +320,6 @@ client_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *buf, const struc
         case S5_ATYP_HOST:
             target->buf = m;
             target->buflen = mlen;
-            logger_stderr("resolve: %s", host);
             resolve_target(target, host, port);
             break;
 
