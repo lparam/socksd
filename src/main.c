@@ -174,7 +174,7 @@ init(void) {
     resolver_prepare(nameserver_num);
 
     if (idle_timeout == 0) {
-        idle_timeout = 60 * 1000;
+        idle_timeout = 5 * 60 * 1000;
     }
 }
 
