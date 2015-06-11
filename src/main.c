@@ -103,7 +103,7 @@ parse_opts(int argc, char *argv[]) {
 			print_usage(argv[0]);
 			break;
         case 't':
-            idle_timeout = strtol(optarg, NULL, 10) * 1000;
+            idle_timeout = strtol(optarg, NULL, 10);
             break;
         case 'V':
             verbose = 1;
@@ -174,7 +174,7 @@ init(void) {
     resolver_prepare(nameserver_num);
 
     if (idle_timeout == 0) {
-        idle_timeout = 5 * 60 * 1000;
+        idle_timeout = 60;
     }
 }
 
