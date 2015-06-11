@@ -79,61 +79,19 @@ close_target(struct target_context *target) {
     }
 }
 
-static int
-parse_target_address(const uint8_t atyp, const char *addrbuf, struct sockaddr *addr, char *host) {
-    int addrlen;
-    uint16_t portlen = 2; // network byte order port number, 2 bytes
-    union {
-        struct sockaddr addr;
-        struct sockaddr_in addr4;
-        struct sockaddr_in6 addr6;
-    } dest;
-
-    memset(&dest, 0, sizeof(dest));
-
-    if (atyp == S5_ATYP_IPV4) {
-        size_t in_addr_len = sizeof(struct in_addr); // 4 bytes for IPv4 address
-        dest.addr4.sin_family = AF_INET;
-        memcpy(&dest.addr4.sin_addr, addrbuf, in_addr_len);
-        memcpy(&dest.addr4.sin_port, addrbuf + in_addr_len, portlen);
-        addrlen = 4 + portlen;
-
-    } else if (atyp == S5_ATYP_HOST) {
-        uint8_t namelen = *(uint8_t *)(addrbuf); // 1 byte of name length
-        if (namelen > 0xFF) {
-            return -1;
-        }
-        memcpy(&dest.addr4.sin_port, addrbuf + 1 + namelen, portlen);
-        memcpy(host, addrbuf + 1, namelen);
-        host[namelen] = '\0';
-        addrlen = 1 + namelen + portlen;
-
-    } else if (atyp == S5_ATYP_IPV6) {
-        size_t in6_addr_len = sizeof(struct in6_addr); // 16 bytes for IPv6 address
-        memcpy(&dest.addr6.sin6_addr, addrbuf, in6_addr_len);
-        memcpy(&dest.addr6.sin6_port, addrbuf + in6_addr_len, portlen);
-        addrlen = 16 + portlen;
-
-    } else {
-        return 0;
-    }
-
-    memcpy(addr, &dest.addr, sizeof(*addr));
-    return addrlen;
-}
-
 static void
 target_alloc_cb(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf) {
     struct target_context *target = handle->data;
     buf->base = malloc(suggested_size) + target->header_len;
-    memset(buf->base - target->header_len, 0, suggested_size);
     buf->len = suggested_size - target->header_len;
+    memset(buf->base - target->header_len, 0, suggested_size);
 }
 
 static void
 client_alloc_cb(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf) {
     buf->base = malloc(suggested_size);
     buf->len = suggested_size;
+    memset(buf->base, 0, suggested_size);
 }
 
 static void
@@ -226,6 +184,7 @@ forward_to_target(struct target_context *target, uint8_t *data, ssize_t len) {
         logger_log(LOG_INFO, "%s:%d -> %s:%d", src, src_port, dst, dst_port);
     }
     uv_udp_send_t *write_req = malloc(sizeof(*write_req) + sizeof(uv_buf_t));
+    memset(write_req, 0, sizeof(*write_req) + sizeof(uv_buf_t));
     uv_buf_t *buf = (uv_buf_t *)(write_req + 1);
     buf->base = (char *)data;
     buf->len = len;
@@ -250,6 +209,49 @@ static void
 resolve_target(struct target_context *target, char *addr, uint16_t port) {
     struct resolver_context *ctx = target->server_handle->loop->data;
     target->addr_query = resolver_query(ctx, addr, port, resolve_cb, target);
+}
+
+static int
+parse_target_address(const uint8_t atyp, const char *addrbuf, struct sockaddr *addr, char *host) {
+    int addrlen;
+    uint16_t portlen = 2; // network byte order port number, 2 bytes
+    union {
+        struct sockaddr addr;
+        struct sockaddr_in addr4;
+        struct sockaddr_in6 addr6;
+    } dest;
+
+    memset(&dest, 0, sizeof(dest));
+
+    if (atyp == S5_ATYP_IPV4) {
+        size_t in_addr_len = sizeof(struct in_addr); // 4 bytes for IPv4 address
+        dest.addr4.sin_family = AF_INET;
+        memcpy(&dest.addr4.sin_addr, addrbuf, in_addr_len);
+        memcpy(&dest.addr4.sin_port, addrbuf + in_addr_len, portlen);
+        addrlen = 4 + portlen;
+
+    } else if (atyp == S5_ATYP_HOST) {
+        uint8_t namelen = *(uint8_t *)(addrbuf); // 1 byte of name length
+        if (namelen > 0xFF) {
+            return -1;
+        }
+        memcpy(&dest.addr4.sin_port, addrbuf + 1 + namelen, portlen);
+        memcpy(host, addrbuf + 1, namelen);
+        host[namelen] = '\0';
+        addrlen = 1 + namelen + portlen;
+
+    } else if (atyp == S5_ATYP_IPV6) {
+        size_t in6_addr_len = sizeof(struct in6_addr); // 16 bytes for IPv6 address
+        memcpy(&dest.addr6.sin6_addr, addrbuf, in6_addr_len);
+        memcpy(&dest.addr6.sin6_port, addrbuf + in6_addr_len, portlen);
+        addrlen = 16 + portlen;
+
+    } else {
+        return 0;
+    }
+
+    memcpy(addr, &dest.addr, sizeof(*addr));
+    return addrlen;
 }
 
 /*
