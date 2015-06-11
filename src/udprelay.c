@@ -210,6 +210,7 @@ target_send_cb(uv_udp_send_t *req, int status) {
         logger_log(LOG_ERR, "forward to target failed: %s", uv_strerror(status));
     }
     uv_buf_t *buf = (uv_buf_t *)(req + 1);
+    // free client recv buffer
     free(buf->base);
     free(req);
 }
