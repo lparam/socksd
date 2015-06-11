@@ -51,7 +51,7 @@ timer_close_cb(uv_handle_t *handle) {
 static void
 reset_timer(struct target_context *target) {
     target->timer->data = target;
-    uv_timer_start(target->timer, timer_expire, idle_timeout, 0);
+    uv_timer_start(target->timer, timer_expire, idle_timeout * 1000, 0);
 }
 
 
@@ -187,12 +187,14 @@ target_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *buf, const struc
             memcpy(m + 4 + 16, &addr6->sin6_port, 2);
         }
 
-        char addrbuf1[INET6_ADDRSTRLEN + 1] = {0};
-        char addrbuf2[INET6_ADDRSTRLEN + 1] = {0};
-        uint16_t p1 = 0,p2 = 0;
-        p1 = ip_name(addr, addrbuf1, sizeof addrbuf1);
-        p2 = ip_name(&target->client_addr, addrbuf2, sizeof addrbuf2);
-        logger_log(LOG_INFO, "%s:%d -> %s:%d", addrbuf1, p1, addrbuf2, p2);
+        if (verbose) {
+            char src[INET6_ADDRSTRLEN + 1] = {0};
+            char dst[INET6_ADDRSTRLEN + 1] = {0};
+            uint16_t src_port = 0, dst_port = 0;
+            src_port = ip_name(addr, src, sizeof src);
+            dst_port = ip_name(&target->client_addr, dst, sizeof dst);
+            logger_log(LOG_INFO, "%s:%d -> %s:%d", src, src_port, dst, dst_port);
+        }
 
         forward_to_client(target, m, mlen);
 
@@ -214,6 +216,14 @@ target_send_cb(uv_udp_send_t *req, int status) {
 
 static void
 forward_to_target(struct target_context *target, uint8_t *data, ssize_t len) {
+    if (verbose) {
+        char src[INET6_ADDRSTRLEN + 1] = {0};
+        char dst[INET6_ADDRSTRLEN + 1] = {0};
+        uint16_t src_port = 0, dst_port = 0;
+        src_port = ip_name(&target->client_addr, src, sizeof src);
+        dst_port = ip_name(&target->dest_addr, dst, sizeof dst);
+        logger_log(LOG_INFO, "%s:%d -> %s:%d", src, src_port, dst, dst_port);
+    }
     uv_udp_send_t *write_req = malloc(sizeof(*write_req) + sizeof(uv_buf_t));
     uv_buf_t *buf = (uv_buf_t *)(write_req + 1);
     buf->base = (char *)data;
@@ -302,18 +312,11 @@ client_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *buf, const struc
         ssize_t mlen = nread - 4 - addrlen;
         memmove(m, m + 4 + addrlen, mlen);
 
-        char addrbuf1[INET6_ADDRSTRLEN + 1] = {0};
-        char addrbuf2[INET6_ADDRSTRLEN + 1] = {0};
-        uint16_t p1 = 0,p2 = 0;
-
         switch (atyp) {
 
         case S5_ATYP_IPV4:
         case S5_ATYP_IPV6:
             target->header_len = dest_addr.sa_family == AF_INET ? IPV4_HEADER_LEN : IPV6_HEADER_LEN;
-            p1 = ip_name(addr, addrbuf1, sizeof addrbuf1);
-            p2 = ip_name(&dest_addr, addrbuf2, sizeof addrbuf2);
-            logger_log(LOG_INFO, "%s:%d -> %s:%d", addrbuf1, p1, addrbuf2, p2);
             forward_to_target(target, m, mlen);
             break;
 
