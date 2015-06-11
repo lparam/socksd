@@ -42,7 +42,7 @@ struct remote_context {
     struct sockaddr addr;
     struct client_context *client;
     char buf[2048];
-    uint32_t idle_timeout;
+    uint16_t idle_timeout;
 };
 
 struct client_context * new_client();
