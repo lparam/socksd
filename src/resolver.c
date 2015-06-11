@@ -8,9 +8,8 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 
-#include <uv.h>
+#include "uv.h"
 #include "udns.h"
-
 #include "util.h"
 #include "logger.h"
 #include "resolver.h"
@@ -19,6 +18,7 @@
 struct dns_query {
     dns_host_callback callback;
     void *data;
+    uint16_t port;
     struct dns_query *queries[2];
     struct sockaddr **responses;
     size_t response_count;
@@ -98,6 +98,7 @@ dns_query_a4_cb(struct dns_ctx *dns, struct dns_rr_a4 *result, void *data) {
             struct sockaddr_in *sa = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
             sa->sin_family = AF_INET;
             sa->sin_addr = result->dnsa4_addr[i];
+            sa->sin_port = query->port;
             query->responses[i] = (struct sockaddr *)sa;
         }
     }
@@ -125,6 +126,7 @@ dns_query_a6_cb(struct dns_ctx *dns, struct dns_rr_a6 *result, void *data) {
             struct sockaddr_in6 *sa = (struct sockaddr_in6 *)malloc(sizeof(struct sockaddr_in6));
             sa->sin6_family = AF_INET6;
             sa->sin6_addr = result->dnsa6_addr[i];
+            sa->sin6_port = query->port;
             query->responses[i] = (struct sockaddr *)sa;
         }
     }
@@ -210,24 +212,13 @@ resolver_init(uv_loop_t *loop, int m, char **nameservers, int nameserver_num) {
     return ctx;
 }
 
-void
-resolver_shutdown(struct resolver_context *ctx) {
-    uv_poll_stop(&ctx->watcher);
-    uv_close((uv_handle_t *)&ctx->timer, NULL);
-}
-
-void
-resolver_destroy(struct resolver_context *ctx) {
-    dns_free(ctx->dns);
-    free(ctx);
-}
-
 struct dns_query *
-resolver_query(struct resolver_context *ctx, const char *host, dns_host_callback cb, void *data) {
+resolver_query(struct resolver_context *ctx, const char *host, uint16_t port, dns_host_callback cb, void *data) {
     struct dns_ctx *dns = ctx->dns;
 
     struct dns_query *query = malloc(sizeof(struct dns_query));
     query->callback = cb;
+    query->port = port;
     query->data = data;
     memset(query->queries, 0, sizeof(query->queries));
     query->response_count = 0;
@@ -254,6 +245,18 @@ resolver_query(struct resolver_context *ctx, const char *host, dns_host_callback
     }
 
     return query;
+}
+
+void
+resolver_shutdown(struct resolver_context *ctx) {
+    uv_poll_stop(&ctx->watcher);
+    uv_close((uv_handle_t *)&ctx->timer, NULL);
+}
+
+void
+resolver_destroy(struct resolver_context *ctx) {
+    dns_free(ctx->dns);
+    free(ctx);
 }
 
 void

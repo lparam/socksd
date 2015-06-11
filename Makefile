@@ -4,7 +4,7 @@
 #
 
 MAJOR = 0
-MINOR = 1
+MINOR = 2
 PATCH = 0
 NAME = socksd
 
@@ -32,8 +32,21 @@ export TOPDIR SRCTREE OBJTREE
 
 #########################################################################
 
+ifdef HOST
+CROSS_COMPILE = $(HOST)-
+endif
+
+# for OpenWrt
 ifdef CROSS
 CROSS_COMPILE = $(CROSS)
+HOST = $(patsubst %-,%,$(CROSS_COMPILE))
+ifneq (,$(findstring openwrt,$(CROSS_COMPILE)))
+OPENWRT = 1
+endif
+endif
+
+ifdef CROSS_COMPILE
+CPPFLAGS = -DCROSS_COMPILE
 endif
 
 CFLAGS = \
@@ -42,7 +55,7 @@ CFLAGS = \
 	-Wall \
 	$(PLATFORM_CFLAGS)
 
-# CFLAGS += -g
+CFLAGS += -fomit-frame-pointer -fdata-sections -ffunction-sections
 
 EXTRA_CFLAGS =
 
@@ -51,9 +64,12 @@ EXTRA_CFLAGS =
 CPPFLAGS += -Isrc
 CPPFLAGS += -I3rd/libuv/include -I3rd/udns
 
-LDFLAGS = -Wl,-E
-LDFLAGS += -pthread -ldl -lrt
-LDFLAGS += -L3rd/libuv/.libs -luv -L3rd/udns -ludns
+LDFLAGS = -Wl,--gc-sections
+
+LIBS += -pthread -ldl -lrt
+LIBS += 3rd/libuv/.libs/libuv.a 3rd/udns/libudns.a
+
+LDFLAGS += $(LIBS)
 
 #########################################################################
 include $(TOPDIR)/config.mk
@@ -65,7 +81,7 @@ all: libuv udns socksd
 	$(Q)git submodule update --init
 
 3rd/libuv/Makefile: | 3rd/libuv/autogen.sh
-	$(Q)cd 3rd/libuv && ./autogen.sh && ./configure && $(MAKE)
+	$(Q)cd 3rd/libuv && ./autogen.sh && ./configure --host=$(HOST) LDFLAGS= && $(MAKE)
 
 libuv: 3rd/libuv/Makefile
 
@@ -85,6 +101,9 @@ socksd: \
 	src/dispatcher.o \
 	src/daemon.o \
 	src/signal.o \
+	src/cache.o \
+	src/md5.o \
+	src/udprelay.o \
 	src/client.o \
 	src/remote.o \
 	src/main.o
@@ -95,6 +114,7 @@ clean:
 	\( -name '*.bak' -o -name '*~' \
 	-o -name '*.o' -o -name '*.tmp' \) -print \
 	| xargs rm -f
+	@rm -f socksd
 
 distclean: clean
 	$(Q)cd 3rd/libuv && make distclean

@@ -133,3 +133,9 @@ dump_hex(const void *data, uint32_t len, char *title) {
     printf("\t  [%s] %d octets\n", title, len);
     print_buffer(data, len, 1, 16);
 }
+
+int
+read_size(uint8_t *buffer) {
+	int r = (int)buffer[0] << 8 | (int)buffer[1];
+	return r;
+}

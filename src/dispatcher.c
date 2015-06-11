@@ -5,7 +5,7 @@
 #include <assert.h>
 
 #include "uv.h"
-
+#include "common.h"
 #include "util.h"
 #include "logger.h"
 #include "dispatcher.h"
@@ -16,24 +16,24 @@ extern void close_loop(uv_loop_t *loop);
 extern void setup_signal(uv_loop_t *loop, uv_signal_cb cb, void *data);
 
 static void
-ipc_close_cb(uv_handle_t* handle) {
-    struct ipc_peer_ctx* ctx;
+ipc_close_cb(uv_handle_t *handle) {
+    struct ipc_peer_ctx *ctx;
     ctx = container_of(handle, struct ipc_peer_ctx, peer_handle);
     free(ctx);
 }
 
 static void
-ipc_write_cb(uv_write_t* req, int status) {
-    struct ipc_peer_ctx* ctx;
+ipc_write_cb(uv_write_t *req, int status) {
+    struct ipc_peer_ctx *ctx;
     ctx = container_of(req, struct ipc_peer_ctx, write_req);
     uv_close((uv_handle_t*) &ctx->peer_handle, ipc_close_cb);
 }
 
 static void
-ipc_connection_cb(uv_stream_t* ipc_pipe, int status) {
-    struct ipc_server_ctx* sc;
-    struct ipc_peer_ctx* pc;
-    uv_loop_t* loop;
+ipc_connection_cb(uv_stream_t *ipc_pipe, int status) {
+    struct ipc_server_ctx *sc;
+    struct ipc_peer_ctx *pc;
+    uv_loop_t *loop;
     uv_buf_t buf;
 
     loop = ipc_pipe->loop;
@@ -67,7 +67,7 @@ signal_cb(uv_signal_t *handle, int signum) {
         char *name = signum == SIGINT ? "SIGINT" : "SIGQUIT";
         logger_log(LOG_INFO, "Received %s, scheduling shutdown...", name);
         for (int i = 0; i < ipc->num_servers; i++) {
-            struct server_ctx *server = &ipc->servers[i];
+            struct server_context *server = &ipc->servers[i];
             uv_async_send(&server->async_handle);
         }
         uv_stop(handle->loop);
@@ -79,7 +79,7 @@ signal_cb(uv_signal_t *handle, int signum) {
 }
 
 void
-dispatcher_start(struct sockaddr *addr, struct server_ctx *servers, uint32_t num_servers) {
+dispatcher_start(struct sockaddr *addr, struct server_context *servers, uint32_t num_servers) {
     int rc;
     unsigned int i;
     uv_loop_t *loop;
