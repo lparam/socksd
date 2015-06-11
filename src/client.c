@@ -185,8 +185,12 @@ request_ack(struct client_context *client, enum s5_rep rep) {
         buflen = 10;
     }
 
-    if (rep == S5_REP_SUCCESSED && client->cmd == S5_CMD_CONNECT) {
-        client->stage = S5_STAGE_FORWARD;
+    if (rep == S5_REP_SUCCESSED) {
+        if (client->cmd == S5_CMD_CONNECT) {
+            client->stage = S5_STAGE_FORWARD;
+        } else {
+            client->stage = S5_STAGE_UDP_RELAY;
+        }
     } else {
         client->stage = S5_STAGE_TERMINATE;
     }
@@ -270,11 +274,10 @@ client_send_cb(uv_write_t *req, int status) {
         if (client->stage == S5_STAGE_FORWARD) {
             reset_timer(remote);
             receive_from_remote(remote);
-        } else if (client->cmd != S5_CMD_UDP_ASSOCIATE && client->stage == S5_STAGE_TERMINATE) {
+        } else if (client->stage == S5_STAGE_TERMINATE) {
             close_client(client);
             close_remote(remote);
         }
-        // TODO: stop timer when udp associate (keep connection)
 
     } else {
         char addrbuf[INET6_ADDRSTRLEN + 1] = {0};
