@@ -1,6 +1,12 @@
-# socksd
-a socks5 server implements RFC 1928 (SOCKS V5) using libuv
+socksd
+=================
+a socks5 server implements [RFC 1928](http://tools.ietf.org/html/rfc1928) (SOCKS V5)
 
+Features
+------------
+* CONNECT and UDP support
+* Hostname resolution
+* Concurrency support
 
 ## License
 

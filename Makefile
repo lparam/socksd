@@ -4,7 +4,7 @@
 #
 
 MAJOR = 0
-MINOR = 1
+MINOR = 2
 PATCH = 0
 NAME = socksd
 
@@ -55,7 +55,6 @@ CFLAGS = \
 	-Wall \
 	$(PLATFORM_CFLAGS)
 
-CFLAGS += -g
 CFLAGS += -fomit-frame-pointer -fdata-sections -ffunction-sections
 
 EXTRA_CFLAGS =
