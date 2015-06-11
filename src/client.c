@@ -3,8 +3,7 @@
 #include <string.h>
 #include <assert.h>
 
-#include <uv.h>
-
+#include "uv.h"
 #include "util.h"
 #include "logger.h"
 #include "socks.h"
@@ -57,6 +56,9 @@ verify_request(char *buf, ssize_t buflen) {
     struct socks5_request *req = (struct socks5_request *)buf;
 
     if (req->atyp == S5_ATYP_IPV4) {
+        if ((req->cmd == S5_CMD_CONNECT) && (strncmp(buf + 4, "\x0\x0\x0\x0", 4) == 0)) {
+            return 0;
+        }
         len = sizeof(struct socks5_request) + sizeof(struct in_addr) + 2;
     } else if (req->atyp == S5_ATYP_HOST) {
         uint8_t name_len = *(uint8_t *)(req->addr);
@@ -71,31 +73,61 @@ verify_request(char *buf, ssize_t buflen) {
 }
 
 static int
-analyse_request_addr(struct remote_context *remote, struct socks5_request *req, char *addr) {
+analyse_request_addr(struct socks5_request *req, struct sockaddr *dest, char *dest_buf, char *host) {
+    union {
+        struct sockaddr addr;
+        struct sockaddr_in addr4;
+        struct sockaddr_in6 addr6;
+    } addr;
+    int addrlen;
+    uint16_t portlen = 2; // network byte order port number, 2 bytes
+
+    memset(&addr, 0, sizeof(addr));
+
     if (req->atyp == S5_ATYP_IPV4) {
-        // IPV4
-        size_t in_addr_len = sizeof(struct in_addr);
-        remote->addr.addr4.sin_family = AF_INET;
-        memcpy(&remote->addr.addr4.sin_addr, req->addr, in_addr_len);
-        memcpy(&remote->addr.addr4.sin_port, req->addr + in_addr_len, 2);
-        uv_inet_ntop(AF_INET, (const void *)(req->addr), addr, INET_ADDRSTRLEN);
+        size_t in_addr_len = sizeof(struct in_addr); // 4 bytes for IPv4 address
+        addr.addr4.sin_family = AF_INET;
+        memcpy(&addr.addr4.sin_addr, req->addr, in_addr_len);
+        memcpy(&addr.addr4.sin_port, req->addr + in_addr_len, portlen);
+
+        uv_inet_ntop(AF_INET, (const void *)(req->addr), dest_buf, INET_ADDRSTRLEN);
+        uint16_t port = read_size((uint8_t*)(req->addr + in_addr_len));
+        sprintf(dest_buf, "%s:%u", dest_buf, port);
+
+        addrlen = 4;
+
     } else if (req->atyp == S5_ATYP_HOST) {
-        // Domain name
-        uint8_t name_len = *(uint8_t *)(req->addr);
-        memcpy(&remote->addr.addr4.sin_port, req->addr + 1 + name_len, 2);
-        memcpy(addr, req->addr + 1, name_len);
-        addr[name_len] = '\0';
+        uint8_t namelen = *(uint8_t *)(req->addr); // 1 byte of name length
+        if (namelen > 0xFF) {
+            return 0;
+        }
+        memcpy(&addr.addr4.sin_port, req->addr + 1 + namelen, portlen);
+
+        memcpy(dest_buf, req->addr + 1, namelen);
+        memcpy(host, req->addr + 1, namelen);
+        host[namelen] = '\0';
+        uint16_t port = read_size((uint8_t*)(req->addr + 1 + namelen));
+        sprintf(dest_buf, "%s:%u", dest_buf, port);
+
+        addrlen = 1 + namelen;
+
     } else if (req->atyp == S5_ATYP_IPV6) {
-        // IPV6
-        size_t in6_addr_len = sizeof(struct in6_addr);
-        memcpy(&remote->addr.addr6.sin6_addr, req->addr, in6_addr_len);
-        memcpy(&remote->addr.addr6.sin6_port, req->addr + in6_addr_len, 2);
-        uv_inet_ntop(AF_INET6, (const void *)(req->addr), addr, INET6_ADDRSTRLEN);
+        size_t in6_addr_len = sizeof(struct in6_addr); // 16 bytes for IPv6 address
+        memcpy(&addr.addr6.sin6_addr, req->addr, in6_addr_len);
+        memcpy(&addr.addr6.sin6_port, req->addr + in6_addr_len, portlen);
+
+        uv_inet_ntop(AF_INET6, (const void *)(req->addr), dest_buf, INET_ADDRSTRLEN);
+        uint16_t port = read_size((uint8_t*)(req->addr + in6_addr_len));
+        sprintf(dest_buf, "%s:%u", dest_buf, port);
+
+        addrlen = 16;
+
     } else {
-        return 1;
+        return 0;
     }
 
-    return 0;
+    memcpy(dest, &addr.addr, sizeof(struct sockaddr));
+    return addrlen;
 }
 
 static void
@@ -129,12 +161,16 @@ request_ack(struct client_context *client, enum s5_rep rep) {
     int addrlen = sizeof(addr);
     int buflen;
 
-    buf[0] = 0x05; // ver
-    buf[1] = rep;  // rep
-    buf[2] = 0x00; // rsv
+    buf[0] = 0x05; // VER
+    buf[1] = rep;  // REP
+    buf[2] = 0x00; // RSV
 
     memset(&addr, 0, sizeof(addr));
-    uv_tcp_getsockname(&remote->handle.tcp, (struct sockaddr *) &addr, &addrlen);
+    if (client->cmd == S5_CMD_UDP_ASSOCIATE) {
+        uv_tcp_getsockname(&client->handle.tcp, (struct sockaddr *) &addr, &addrlen);
+    } else {
+        uv_tcp_getsockname(&remote->handle.tcp, (struct sockaddr *) &addr, &addrlen);
+    }
     if (addrlen == sizeof(struct sockaddr_in6)) {
         buf[3] = 0x04;  /* atyp - IPv6. */
         const struct sockaddr_in6 *addr6 = (const struct sockaddr_in6 *)&addr;
@@ -150,7 +186,11 @@ request_ack(struct client_context *client, enum s5_rep rep) {
     }
 
     if (rep == S5_REP_SUCCESSED) {
-        client->stage = S5_STAGE_FORWARD;
+        if (client->cmd == S5_CMD_CONNECT) {
+            client->stage = S5_STAGE_FORWARD;
+        } else {
+            client->stage = S5_STAGE_UDP_RELAY;
+        }
     } else {
         client->stage = S5_STAGE_TERMINATE;
     }
@@ -164,33 +204,52 @@ handshake(struct client_context *client) {
     send_to_client(client, "\x5\x0", 2);
 }
 
+/*
+ *
+ * SOCKS5 Request
+ * +----+-----+-------+------+----------+----------+
+ * |VER | CMD |  RSV  | ATYP | BND.ADDR | BND.PORT |
+ * +----+-----+-------+------+----------+----------+
+ * | 1  |  1  | X'00' |  1   | Variable |    2     |
+ * +----+-----+-------+------+----------+----------+
+ *
+ */
 static void
-request_start(struct client_context *client) {
-    struct socks5_request *request = (struct socks5_request *)client->buf;
+request_start(struct client_context *client, char *buf, ssize_t buflen) {
+    struct socks5_request *request = (struct socks5_request *)buf;
     struct remote_context *remote = client->remote;
 
-    if (request->cmd != S5_CMD_CONNECT) {
+    client->cmd = request->cmd;
+
+    if (request->cmd != S5_CMD_CONNECT && request->cmd != S5_CMD_UDP_ASSOCIATE) {
         logger_log(LOG_ERR, "unsupported cmd: 0x%02x", request->cmd);
         request_ack(client, S5_REP_CMD_NOT_SUPPORTED);
         return;
     }
 
-    char addr[256] = {0};
-    int rc = analyse_request_addr(client->remote, request, addr);
-    if (rc) {
+    if (request->cmd == S5_CMD_UDP_ASSOCIATE) {
+        request_ack(client, S5_REP_SUCCESSED);
+        return;
+    }
+
+    char host[256] = {0};
+    int addrlen = analyse_request_addr(request, &remote->addr, client->target_addr, host);
+    if (addrlen < 1) {
         logger_log(LOG_ERR, "unsupported address type: 0x%02x", request->atyp);
         request_ack(client, S5_REP_ADDRESS_TYPE_NOT_SUPPORTED);
         return;
     }
 
+    uint16_t *portbuf; // avoid Wstrict-aliasing
     switch (request->atyp) {
         case S5_ATYP_HOST:
-            resolve_remote(remote, addr);
+            portbuf = ((uint16_t *)(request->addr + addrlen));
+            resolve_remote(remote, host, *portbuf);
             break;
         case S5_ATYP_IPV4:
         case S5_ATYP_IPV6:
             if (verbose) {
-                logger_log(LOG_INFO, "connect to %s", addr);
+                logger_log(LOG_INFO, "connect to %s", client->target_addr);
             }
             connect_to_remote(remote);
             break;
@@ -221,9 +280,9 @@ client_send_cb(uv_write_t *req, int status) {
         }
 
     } else {
-        if (verbose) {
-            logger_log(LOG_ERR, "send to client failed: %s", uv_strerror(status));
-        }
+        char addrbuf[INET6_ADDRSTRLEN + 1] = {0};
+        uint16_t port = ip_name(&client->addr, addrbuf, sizeof addrbuf);
+        logger_log(LOG_ERR, "%s -> %s:%d failed: %s", client->target_addr, addrbuf, port, uv_strerror(status));
     }
 
     free(req);
@@ -237,7 +296,7 @@ client_recv_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
     if (nread > 0) {
         switch (client->stage) {
         case S5_STAGE_HANDSHAKE:
-            if (verify_methods(client->buf, nread)) {
+            if (verify_methods(buf->base, nread)) {
                 handshake(client);
             } else {
                 logger_log(LOG_ERR, "invalid method packet");
@@ -246,8 +305,8 @@ client_recv_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
             }
             break;
         case S5_STAGE_REQUEST:
-            if (verify_request(client->buf, nread)) {
-                request_start(client);
+            if (verify_request(buf->base, nread)) {
+                request_start(client, buf->base, nread);
             } else {
                 logger_log(LOG_ERR, "invalid request packet");
                 close_client(client);
@@ -263,6 +322,11 @@ client_recv_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
         }
 
     } else if (nread < 0) {
+        if (nread != UV_EOF) {
+            char addrbuf[INET6_ADDRSTRLEN + 1] = {0};
+            uint16_t port = ip_name(&client->addr, addrbuf, sizeof addrbuf);
+            logger_log(LOG_ERR, "receive from %s:%d failed: %s", addrbuf, port, uv_strerror(nread));
+        }
         close_client(client);
         close_remote(remote);
     }
@@ -282,6 +346,8 @@ client_accept_cb(uv_stream_t *server, int status) {
 
     int rc = uv_accept(server, &client->handle.stream);
     if (rc == 0) {
+        int namelen = sizeof client->addr;
+        uv_tcp_getpeername(&client->handle.tcp, &client->addr, &namelen);
         reset_timer(remote);
         client->handle.stream.data = client;
         rc = uv_read_start(&client->handle.stream, client_alloc_cb, client_recv_cb);

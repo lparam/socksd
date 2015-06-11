@@ -15,7 +15,7 @@
 
 
 static ssize_t
-read_file(int fd, u_char *buf, size_t size, off_t offset) {
+read_file(int fd, uint8_t *buf, size_t size, off_t offset) {
     ssize_t n = pread(fd, buf, size, offset);
     if (n == -1) {
         return -1;
@@ -61,7 +61,7 @@ signal_process(char *signal, const char *pidfile) {
         if (kill(pid, SIGTERM) != -1) {
             return 0;
         } else {
-            logger_log(LOG_ERR, "stop socksd failed (%d: %s)", errno, strerror(errno));
+            logger_log(LOG_ERR, "stop socksd failed (%d: %s)", pid, strerror(errno));
         }
     }
     if (strcmp(signal, "quit") == 0) {

@@ -2,6 +2,8 @@
 #define _CONSUMER_H
 
 #include "uv.h"
+#include "util.h"
+#include "common.h"
 
 #define IPC_PIPE_NAME "SOCKSD_CONNECTION_DISPATCHER_PIPE"
 
@@ -9,27 +11,7 @@
 #define offsetof(TYPE, MEMBER) ((size_t) &((TYPE *)0)->MEMBER)
 #endif
 
-#define container_of(ptr, type, member) ((type*)(((char*)(ptr)) - offsetof(type, member)))
-
-
-union stream_handle2 {
-    uv_pipe_t pipe;
-    uv_tcp_t tcp;
-};
-
-typedef unsigned char handle_storage_t[sizeof(union stream_handle2)];
-
-struct server_ctx {
-    int index;
-    handle_storage_t server_handle;
-    unsigned int num_connects;
-    uv_async_t async_handle;
-    uv_thread_t thread_id;
-    uv_sem_t semaphore;
-    uv_connection_cb accept_cb;
-    int nameserver_num;
-    char **nameservers;
-};
+// #define container_of(ptr, type, member) ((type*)(((char*)(ptr)) - offsetof(type, member)))
 
 struct ipc_client_ctx {
     uv_connect_t connect_req;
@@ -42,7 +24,7 @@ struct ipc_server_ctx {
     handle_storage_t server_handle;
     unsigned int num_connects;
     unsigned int num_servers;
-    struct server_ctx *servers;
+    struct server_context *servers;
     uv_pipe_t ipc_pipe;
 };
 

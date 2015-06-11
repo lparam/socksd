@@ -14,6 +14,6 @@ struct ipc_peer_ctx {
     uv_write_t write_req;
 };
 
-void dispatcher_start(struct sockaddr *addr, struct server_ctx *servers, uint32_t num_servers);
+void dispatcher_start(struct sockaddr *addr, struct server_context *servers, uint32_t num_servers);
 
 #endif // for #ifndef _DISPATCHER_H

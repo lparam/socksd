@@ -7,6 +7,8 @@
 #include "uv.h"
 
 #include "util.h"
+#include "common.h"
+#include "udprelay.h"
 #include "resolver.h"
 #include "consumer.h"
 
@@ -56,10 +58,15 @@ ipc_connect_cb(uv_connect_t *req, int status) {
 
 static void
 consumer_close(uv_async_t *handle) {
-    struct server_ctx *ctx;
-    ctx = container_of(handle, struct server_ctx, async_handle);
+    struct server_context *ctx = container_of(handle, struct server_context, async_handle);
+
     uv_close((uv_handle_t*) &ctx->server_handle, NULL);
     uv_close((uv_handle_t*) &ctx->async_handle, NULL);
+
+    if (ctx->udprelay) {
+        udprelay_close(ctx);
+    }
+
     struct resolver_context *res = handle->loop->data;
     resolver_shutdown(res);
 }
@@ -79,7 +86,7 @@ get_listen_handle(uv_loop_t *loop, uv_stream_t *server_handle) {
 void
 consumer_start(void *arg) {
     uv_loop_t *loop;
-    struct server_ctx *ctx;
+    struct server_context *ctx;
 
     ctx = arg;
 
@@ -106,6 +113,11 @@ consumer_start(void *arg) {
     loop->data = res;
 
     uv_listen((uv_stream_t*)&ctx->server_handle, 128, ctx->accept_cb);
+
+    if (ctx->udprelay) {
+        udprelay_start(loop, ctx);
+    }
+
     uv_run(loop, UV_RUN_DEFAULT);
 
     close_loop(loop);
