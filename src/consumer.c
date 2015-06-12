@@ -5,7 +5,6 @@
 #include <string.h>
 
 #include "uv.h"
-
 #include "util.h"
 #include "common.h"
 #include "udprelay.h"
@@ -13,6 +12,7 @@
 #include "consumer.h"
 
 
+extern uv_key_t thread_resolver_key;
 extern void close_loop(uv_loop_t *loop);
 
 static void
@@ -67,8 +67,8 @@ consumer_close(uv_async_t *handle) {
         udprelay_close(ctx);
     }
 
-    struct resolver_context *res = handle->loop->data;
-    resolver_shutdown(res);
+    struct resolver_context *dns = uv_key_get(&thread_resolver_key);
+    resolver_shutdown(dns);
 }
 
 static void
@@ -108,9 +108,12 @@ consumer_start(void *arg) {
 
     get_listen_handle(loop, (uv_stream_t*)&ctx->server_handle);
 
-    struct resolver_context *res = resolver_init(loop, MODE_IPV4,
-      ctx->nameserver_num == 0 ? NULL : ctx->nameservers, ctx->nameserver_num);
-    loop->data = res;
+    struct resolver_context *res =
+      resolver_init(loop, MODE_IPV4,
+        ctx->nameserver_num == 0 ? NULL : ctx->nameservers, ctx->nameserver_num);
+
+    uv_key_create(&thread_resolver_key);
+    uv_key_set(&thread_resolver_key, res);
 
     uv_listen((uv_stream_t*)&ctx->server_handle, 128, ctx->accept_cb);
 
@@ -123,6 +126,7 @@ consumer_start(void *arg) {
     close_loop(loop);
     free(loop);
     resolver_destroy(res);
+    uv_key_delete(&thread_resolver_key);
 
     uv_sem_post(&ctx->semaphore);
 }

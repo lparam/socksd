@@ -36,7 +36,7 @@ void
 reset_timer(struct remote_context *remote) {
     if (remote->timer != NULL) {
         remote->timer->data = remote;
-        uv_timer_start(remote->timer, remote_timer_expire, remote->idle_timeout, 0);
+        uv_timer_start(remote->timer, remote_timer_expire, remote->idle_timeout * 1000, 0);
     }
 }
 
@@ -50,7 +50,7 @@ new_remote(uint16_t timeout) {
     struct remote_context *remote = malloc(sizeof(*remote));
     memset(remote, 0, sizeof(*remote));
     remote->timer = malloc(sizeof(uv_timer_t));
-    remote->idle_timeout = timeout * 1000;
+    remote->idle_timeout = timeout;
     return remote;
 }
 
@@ -143,6 +143,10 @@ resolve_cb(struct sockaddr *addr, void *data) {
     struct client_context *client = remote->client;
 
     if (addr == NULL) {
+        if (verbose) {
+            logger_log(LOG_ERR, "resolve %s failed: %s",
+              remote->client->target_addr, resolver_error(remote->addr_query));
+        }
         remote->stage = S5_STAGE_TERMINATE;
         request_ack(client, S5_REP_HOST_UNREACHABLE);
 
@@ -157,9 +161,16 @@ resolve_cb(struct sockaddr *addr, void *data) {
 
 void
 resolve_remote(struct remote_context *remote, char *addr, uint16_t port) {
-    struct resolver_context *ctx = remote->handle.handle.loop->data;
+    if (verbose) {
+        logger_log(LOG_INFO, "resolve %s", addr);
+    }
+    struct resolver_context *ctx = uv_key_get(&thread_resolver_key);
     remote->stage = S5_STAGE_RESOLVE;
     remote->addr_query = resolver_query(ctx, addr, port, resolve_cb, remote);
+    if (remote->addr_query == NULL) {
+        remote->stage = S5_STAGE_TERMINATE;
+        request_ack(remote->client, S5_REP_HOST_UNREACHABLE);
+    }
 }
 
 static void

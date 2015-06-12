@@ -138,8 +138,8 @@ signal_cb(uv_signal_t *handle, int signum) {
             uv_signal_stop(&signals[i].sig);
         }
 
-        struct resolver_context *res = handle->loop->data;
-        resolver_shutdown(res);
+        struct resolver_context *dns = uv_key_get(&thread_resolver_key);
+        resolver_shutdown(dns);
         struct server_context *ctx = handle->data;
         uv_close((uv_handle_t *)&ctx->tcp, NULL);
         udprelay_close(ctx);
@@ -225,16 +225,19 @@ main(int argc, char *argv[]) {
 
             setup_signal(loop, signal_cb, &ctx);
 
-            struct resolver_context *res = resolver_init(loop, MODE_IPV4,
-              nameserver_num == 0 ? NULL : nameservers, nameserver_num);
-            loop->data = res;
+            struct resolver_context *dns =
+              resolver_init(loop, MODE_IPV4,
+                nameserver_num == 0 ? NULL : nameservers, nameserver_num);
+            uv_key_create(&thread_resolver_key);
+            uv_key_set(&thread_resolver_key, dns);
 
             udprelay_start(loop, &ctx);
 
             uv_run(loop, UV_RUN_DEFAULT);
 
             close_loop(loop);
-            resolver_destroy(res);
+            resolver_destroy(dns);
+            uv_key_delete(&thread_resolver_key);
 
         } else {
             logger_stderr("listen error: %s", uv_strerror(rc));

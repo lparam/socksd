@@ -31,6 +31,7 @@ struct target_context {
 
 extern int verbose;
 extern uint16_t idle_timeout;
+extern uv_key_t thread_resolver_key;
 static uv_mutex_t mutex;
 static struct cache *cache;
 
@@ -207,7 +208,10 @@ resolve_cb(struct sockaddr *addr, void *data) {
 
 static void
 resolve_target(struct target_context *target, char *addr, uint16_t port) {
-    struct resolver_context *ctx = target->server_handle->loop->data;
+    if (verbose) {
+        logger_log(LOG_INFO, "resolve %s", addr);
+    }
+    struct resolver_context *ctx = uv_key_get(&thread_resolver_key);
     target->addr_query = resolver_query(ctx, addr, port, resolve_cb, target);
 }
 
