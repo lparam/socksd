@@ -24,5 +24,6 @@ struct dns_query * resolver_query(struct resolver_context *ctx, const char *host
 void resolver_cancel(struct dns_query *);
 void resolver_shutdown(struct resolver_context *rctx);
 void resolver_destroy(struct resolver_context *ctx);
+const char* resolver_error(struct dns_query *query);
 
 #endif // for #ifndef _RESOLVER_H
