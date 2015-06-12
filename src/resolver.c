@@ -92,6 +92,7 @@ dns_query_a4_cb(struct dns_ctx *dns, struct dns_rr_a4 *result, void *data) {
         query->response_count = result->dnsa4_nrr;
         for (int i = 0; i < result->dnsa4_nrr; i++) {
             struct sockaddr_in *sa = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
+            memset(sa, 0, sizeof(struct sockaddr_in));
             sa->sin_family = AF_INET;
             sa->sin_addr = result->dnsa4_addr[i];
             sa->sin_port = query->port;
@@ -122,6 +123,7 @@ dns_query_a6_cb(struct dns_ctx *dns, struct dns_rr_a6 *result, void *data) {
         query->response_count = result->dnsa6_nrr;
         for (int i = 0; i < result->dnsa6_nrr; i++) {
             struct sockaddr_in6 *sa = (struct sockaddr_in6 *)malloc(sizeof(struct sockaddr_in6));
+            memset(sa, 0, sizeof(struct sockaddr_in6));
             sa->sin6_family = AF_INET6;
             sa->sin6_addr = result->dnsa6_addr[i];
             sa->sin6_port = query->port;
