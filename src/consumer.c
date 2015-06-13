@@ -68,6 +68,7 @@ consumer_close(uv_async_t *handle) {
     }
 
     struct resolver_context *dns = uv_key_get(&thread_resolver_key);
+    assert(dns != NULL);
     resolver_shutdown(dns);
 }
 
@@ -108,12 +109,11 @@ consumer_start(void *arg) {
 
     get_listen_handle(loop, (uv_stream_t*)&ctx->server_handle);
 
-    struct resolver_context *res =
+    struct resolver_context *dns =
       resolver_init(loop, MODE_IPV4,
         ctx->nameserver_num == 0 ? NULL : ctx->nameservers, ctx->nameserver_num);
 
-    uv_key_create(&thread_resolver_key);
-    uv_key_set(&thread_resolver_key, res);
+    uv_key_set(&thread_resolver_key, dns);
 
     uv_listen((uv_stream_t*)&ctx->server_handle, 128, ctx->accept_cb);
 
@@ -125,8 +125,7 @@ consumer_start(void *arg) {
 
     close_loop(loop);
     free(loop);
-    resolver_destroy(res);
-    uv_key_delete(&thread_resolver_key);
+    resolver_destroy(dns);
 
     uv_sem_post(&ctx->semaphore);
 }

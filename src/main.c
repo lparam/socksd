@@ -172,6 +172,7 @@ init(void) {
     signal(SIGPIPE, SIG_IGN);
 
     resolver_prepare(nameserver_num);
+    uv_key_create(&thread_resolver_key);
 
     if (idle_timeout == 0) {
         idle_timeout = 60;
@@ -228,7 +229,6 @@ main(int argc, char *argv[]) {
             struct resolver_context *dns =
               resolver_init(loop, MODE_IPV4,
                 nameserver_num == 0 ? NULL : nameservers, nameserver_num);
-            uv_key_create(&thread_resolver_key);
             uv_key_set(&thread_resolver_key, dns);
 
             udprelay_start(loop, &ctx);
@@ -237,7 +237,6 @@ main(int argc, char *argv[]) {
 
             close_loop(loop);
             resolver_destroy(dns);
-            uv_key_delete(&thread_resolver_key);
 
         } else {
             logger_stderr("listen error: %s", uv_strerror(rc));
@@ -276,6 +275,8 @@ main(int argc, char *argv[]) {
     }
 
     udprelay_destroy();
+
+    uv_key_delete(&thread_resolver_key);
 
     if (daemon_mode) {
         delete_pidfile(pidfile);
