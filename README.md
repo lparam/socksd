@@ -1,6 +1,6 @@
 socksd
 =================
-a socks5 server implements [RFC 1928](http://tools.ietf.org/html/rfc1928) (SOCKS V5)
+A socks5 server implements [RFC 1928](http://tools.ietf.org/html/rfc1928) (SOCKS V5)
 
 Features
 ------------
