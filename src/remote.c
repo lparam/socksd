@@ -24,6 +24,9 @@ remote_timer_expire(uv_timer_t *handle) {
         if (client->cmd == S5_CMD_UDP_ASSOCIATE) {
             logger_log(LOG_WARNING, "udp assocation timeout");
         } else {
+            if (client->target_addr == NULL || strlen(client->target_addr) < 1) {
+                logger_stderr("client cmd: %d", client->cmd);
+            }
             char addrbuf[INET6_ADDRSTRLEN + 1] = {0};
             uint16_t port = ip_name(&client->addr, addrbuf, sizeof addrbuf);
             logger_log(LOG_WARNING, "%s:%d <-> %s connection timeout", addrbuf, port, client->target_addr);
@@ -143,10 +146,8 @@ resolve_cb(struct sockaddr *addr, void *data) {
     struct client_context *client = remote->client;
 
     if (addr == NULL) {
-        if (verbose) {
-            logger_log(LOG_ERR, "resolve %s failed: %s",
-              remote->client->target_addr, resolver_error(remote->addr_query));
-        }
+        logger_log(LOG_ERR, "resolve %s failed: %s",
+          remote->client->target_addr, resolver_error(remote->addr_query));
         remote->stage = S5_STAGE_TERMINATE;
         request_ack(client, S5_REP_HOST_UNREACHABLE);
 
