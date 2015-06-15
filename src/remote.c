@@ -24,9 +24,6 @@ remote_timer_expire(uv_timer_t *handle) {
         if (client->cmd == S5_CMD_UDP_ASSOCIATE) {
             logger_log(LOG_WARNING, "udp assocation timeout");
         } else {
-            if (client->target_addr == NULL || strlen(client->target_addr) < 1) {
-                logger_stderr("client cmd: %d", client->cmd);
-            }
             char addrbuf[INET6_ADDRSTRLEN + 1] = {0};
             uint16_t port = ip_name(&client->addr, addrbuf, sizeof addrbuf);
             logger_log(LOG_WARNING, "%s:%d <-> %s connection timeout", addrbuf, port, client->target_addr);
