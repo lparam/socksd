@@ -67,32 +67,41 @@ parse_opts(int argc, char *argv[]) {
     int opt = 0, longindex = 0;
 
     while ((opt = getopt_long(argc, argv, _optString, _lopts, &longindex)) != -1) {
+
         switch (opt) {
+
         case 'v':
             printf("socksd version: %s \n", SOCKSD_VER);
             exit(0);
             break;
+
         case 'h':
         case '?':
             print_usage(argv[0]);
             break;
+
         case 'l':
             local_addrbuf = optarg;
             break;
+
         case 'c':
             concurrency = strtol(optarg, NULL, 10);
             break;
+
         case 'd':
             if (nameserver_num < MAX_DNS_NUM) {
                 nameservers[nameserver_num++] = optarg;
             }
             break;
+
         case 'p':
             pidfile = optarg;
             break;
+
 		case 'n':
             daemon_mode = 0;
 			break;
+
 		case 's':
             xsignal = optarg;
             if (strcmp(xsignal, "stop") == 0
@@ -102,12 +111,15 @@ parse_opts(int argc, char *argv[]) {
             fprintf(stderr, "invalid option: -s %s\n", xsignal);
 			print_usage(argv[0]);
 			break;
+
         case 't':
             idle_timeout = strtol(optarg, NULL, 10);
             break;
+
         case 'V':
             verbose = 1;
             break;
+
         default:
             print_usage(argv[0]);
             break;

@@ -56,15 +56,19 @@ verify_request(char *buf, ssize_t buflen) {
     struct socks5_request *req = (struct socks5_request *)buf;
 
     if (req->atyp == S5_ATYP_IPV4) {
-        if ((req->cmd == S5_CMD_CONNECT) && (strncmp(buf + 4, "\x0\x0\x0\x0", 4) == 0)) {
+        if ((req->cmd == S5_CMD_CONNECT)
+            && (strncmp(buf + 4, "\x0\x0\x0\x0", 4) == 0)) {
             return 0;
         }
         len = sizeof(struct socks5_request) + sizeof(struct in_addr) + 2;
+
     } else if (req->atyp == S5_ATYP_HOST) {
         uint8_t name_len = *(uint8_t *)(req->addr);
         len = sizeof(struct socks5_request) + 1 + name_len + 2;
+
     } else if (req->atyp == S5_ATYP_IPV6) {
         len = sizeof(struct socks5_request) + sizeof(struct in6_addr) + 2;
+
     } else {
         len = 0;
     }
@@ -80,24 +84,28 @@ analyse_request_addr(struct socks5_request *req, struct sockaddr *dest, char *de
         struct sockaddr_in6 addr6;
     } addr;
     int addrlen;
-    uint16_t portlen = 2; // network byte order port number, 2 bytes
+    /* network byte order port number, 2 bytes */
+    uint16_t portlen = 2;
 
     memset(&addr, 0, sizeof(addr));
 
     if (req->atyp == S5_ATYP_IPV4) {
-        size_t in_addr_len = sizeof(struct in_addr); // 4 bytes for IPv4 address
+        /* 4 bytes for IPv4 address */
+        size_t in_addr_len = sizeof(struct in_addr);
         addr.addr4.sin_family = AF_INET;
         memcpy(&addr.addr4.sin_addr, req->addr, in_addr_len);
         memcpy(&addr.addr4.sin_port, req->addr + in_addr_len, portlen);
 
-        uv_inet_ntop(AF_INET, (const void *)(req->addr), dest_buf, INET_ADDRSTRLEN);
+        uv_inet_ntop(AF_INET, (const void *)(req->addr), dest_buf,
+                     INET_ADDRSTRLEN);
         uint16_t port = read_size((uint8_t*)(req->addr + in_addr_len));
         sprintf(dest_buf, "%s:%u", dest_buf, port);
 
         addrlen = 4;
 
     } else if (req->atyp == S5_ATYP_HOST) {
-        uint8_t namelen = *(uint8_t *)(req->addr); // 1 byte of name length
+        /* 1 byte of name length */
+        uint8_t namelen = *(uint8_t *)(req->addr);
         if (namelen > 0xFF) {
             return 0;
         }
@@ -112,11 +120,13 @@ analyse_request_addr(struct socks5_request *req, struct sockaddr *dest, char *de
         addrlen = 1 + namelen;
 
     } else if (req->atyp == S5_ATYP_IPV6) {
-        size_t in6_addr_len = sizeof(struct in6_addr); // 16 bytes for IPv6 address
+        /* 16 bytes for IPv6 address */
+        size_t in6_addr_len = sizeof(struct in6_addr);
         memcpy(&addr.addr6.sin6_addr, req->addr, in6_addr_len);
         memcpy(&addr.addr6.sin6_port, req->addr + in6_addr_len, portlen);
 
-        uv_inet_ntop(AF_INET6, (const void *)(req->addr), dest_buf, INET_ADDRSTRLEN);
+        uv_inet_ntop(AF_INET6, (const void *)(req->addr), dest_buf,
+                     INET_ADDRSTRLEN);
         uint16_t port = read_size((uint8_t*)(req->addr + in6_addr_len));
         sprintf(dest_buf, "%s:%u", dest_buf, port);
 
@@ -136,7 +146,8 @@ send_to_client(struct client_context *client, char *buf, int buflen) {
     client->write_req.data = client;
     uv_write_t *write_req = malloc(sizeof(*write_req));
     write_req->data = client;
-    int rc = uv_write(write_req, &client->handle.stream, &reply, 1, client_send_cb);
+    int rc = uv_write(write_req, &client->handle.stream, &reply, 1,
+                      client_send_cb);
     if (rc) {
         logger_log(LOG_ERR, "write to client error: %s", uv_strerror(rc));
     }
@@ -166,17 +177,23 @@ request_ack(struct client_context *client, enum s5_rep rep) {
     buf[2] = 0x00; // RSV
 
     memset(&addr, 0, sizeof(addr));
+
     if (client->cmd == S5_CMD_UDP_ASSOCIATE) {
-        uv_tcp_getsockname(&client->handle.tcp, (struct sockaddr *) &addr, &addrlen);
+        uv_tcp_getsockname(&client->handle.tcp, (struct sockaddr *) &addr,
+                           &addrlen);
+
     } else {
-        uv_tcp_getsockname(&remote->handle.tcp, (struct sockaddr *) &addr, &addrlen);
+        uv_tcp_getsockname(&remote->handle.tcp, (struct sockaddr *) &addr,
+                           &addrlen);
     }
+
     if (addrlen == sizeof(struct sockaddr_in6)) {
         buf[3] = 0x04;  /* atyp - IPv6. */
         const struct sockaddr_in6 *addr6 = (const struct sockaddr_in6 *)&addr;
         memcpy(buf + 4, &addr6->sin6_addr, 16); /* BND.ADDR */
         memcpy(buf + 20, &addr6->sin6_port, 2); /* BND.PORT */
         buflen = 22;
+
     } else {
         buf[3] = 0x01;  /* atyp - IPv4. */
         const struct sockaddr_in *addr4 = (const struct sockaddr_in *)&addr;
@@ -191,6 +208,7 @@ request_ack(struct client_context *client, enum s5_rep rep) {
         } else {
             client->stage = S5_STAGE_UDP_RELAY;
         }
+
     } else {
         client->stage = S5_STAGE_TERMINATE;
     }
@@ -221,7 +239,8 @@ request_start(struct client_context *client, char *buf, ssize_t buflen) {
 
     client->cmd = request->cmd;
 
-    if (request->cmd != S5_CMD_CONNECT && request->cmd != S5_CMD_UDP_ASSOCIATE) {
+    if (request->cmd != S5_CMD_CONNECT &&
+        request->cmd != S5_CMD_UDP_ASSOCIATE) {
         logger_log(LOG_ERR, "unsupported cmd: 0x%02x", request->cmd);
         request_ack(client, S5_REP_CMD_NOT_SUPPORTED);
         return;
@@ -233,7 +252,8 @@ request_start(struct client_context *client, char *buf, ssize_t buflen) {
     }
 
     char host[256] = {0};
-    int addrlen = analyse_request_addr(request, &remote->addr, client->target_addr, host);
+    int addrlen = analyse_request_addr(request, &remote->addr,
+                                       client->target_addr, host);
     if (addrlen < 1) {
         logger_log(LOG_ERR, "unsupported address type: 0x%02x", request->atyp);
         request_ack(client, S5_REP_ADDRESS_TYPE_NOT_SUPPORTED);
@@ -274,6 +294,7 @@ client_send_cb(uv_write_t *req, int status) {
         if (client->stage == S5_STAGE_FORWARD) {
             reset_timer(remote);
             receive_from_remote(remote);
+
         } else if (client->stage == S5_STAGE_TERMINATE) {
             close_client(client);
             close_remote(remote);
@@ -282,7 +303,8 @@ client_send_cb(uv_write_t *req, int status) {
     } else {
         char addrbuf[INET6_ADDRSTRLEN + 1] = {0};
         uint16_t port = ip_name(&client->addr, addrbuf, sizeof addrbuf);
-        logger_log(LOG_ERR, "%s:%d <- %s failed: %s", addrbuf, port, client->target_addr, uv_strerror(status));
+        logger_log(LOG_ERR, "%s:%d <- %s failed: %s", addrbuf, port,
+                   client->target_addr, uv_strerror(status));
     }
 
     free(req);
@@ -295,6 +317,7 @@ client_recv_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
 
     if (nread > 0) {
         switch (client->stage) {
+
         case S5_STAGE_HANDSHAKE:
             if (verify_methods(buf->base, nread)) {
                 handshake(client);
@@ -304,6 +327,7 @@ client_recv_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
                 close_remote(remote);
             }
             break;
+
         case S5_STAGE_REQUEST:
             if (verify_request(buf->base, nread)) {
                 request_start(client, buf->base, nread);
@@ -313,10 +337,12 @@ client_recv_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
                 close_remote(remote);
             }
             break;
+
         case S5_STAGE_FORWARD:
             uv_read_stop(&client->handle.stream);
             forward_to_remote(remote, buf->base, nread);
             break;
+
         default:
             break;
         }
@@ -325,7 +351,8 @@ client_recv_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
         if (nread != UV_EOF) {
             char addrbuf[INET6_ADDRSTRLEN + 1] = {0};
             uint16_t port = ip_name(&client->addr, addrbuf, sizeof addrbuf);
-            logger_log(LOG_ERR, "receive from %s:%d failed: %s", addrbuf, port, uv_strerror(nread));
+            logger_log(LOG_ERR, "receive from %s:%d failed: %s", addrbuf, port,
+                       uv_strerror(nread));
         }
         close_client(client);
         close_remote(remote);
@@ -350,7 +377,8 @@ client_accept_cb(uv_stream_t *server, int status) {
         uv_tcp_getpeername(&client->handle.tcp, &client->addr, &namelen);
         reset_timer(remote);
         client->handle.stream.data = client;
-        rc = uv_read_start(&client->handle.stream, client_alloc_cb, client_recv_cb);
+        rc = uv_read_start(&client->handle.stream, client_alloc_cb,
+                           client_recv_cb);
     } else {
         logger_log(LOG_ERR, "accept error: %s", uv_strerror(rc));
         close_client(client);

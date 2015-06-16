@@ -26,7 +26,8 @@ remote_timer_expire(uv_timer_t *handle) {
         } else {
             char addrbuf[INET6_ADDRSTRLEN + 1] = {0};
             uint16_t port = ip_name(&client->addr, addrbuf, sizeof addrbuf);
-            logger_log(LOG_WARNING, "%s:%d <-> %s connection timeout", addrbuf, port, client->target_addr);
+            logger_log(LOG_WARNING, "%s:%d <-> %s connection timeout", addrbuf,
+                       port, client->target_addr);
         }
     }
     request_ack(remote->client, S5_REP_TTL_EXPIRED);
@@ -105,9 +106,11 @@ remote_connect_cb(uv_connect_t *req, int status) {
         request_ack(client, S5_REP_SUCCESSED);
         remote->handle.stream.data = remote;
         uv_read_start(&remote->handle.stream, remote_alloc_cb, remote_recv_cb);
+
     } else {
         if (status != UV_ECANCELED) {
-            logger_log(LOG_ERR, "connect to %s failed: %s", client->target_addr, uv_strerror(status));
+            logger_log(LOG_ERR, "connect to %s failed: %s", client->target_addr,
+                       uv_strerror(status));
             request_ack(client, S5_REP_HOST_UNREACHABLE);
         }
     }
@@ -123,16 +126,19 @@ void
 forward_to_remote(struct remote_context *remote, char *buf, int buflen) {
     uv_buf_t request = uv_buf_init(buf, buflen);
     remote->write_req.data = remote;
-    uv_write(&remote->write_req, &remote->handle.stream, &request, 1, remote_send_cb);
+    uv_write(&remote->write_req, &remote->handle.stream, &request, 1,
+             remote_send_cb);
 }
 
 void
 connect_to_remote(struct remote_context *remote) {
     remote->stage = S5_STAGE_CONNECT;
     remote->connect_req.data = remote;
-    int rc = uv_tcp_connect(&remote->connect_req, &remote->handle.tcp, &remote->addr, remote_connect_cb);
+    int rc = uv_tcp_connect(&remote->connect_req, &remote->handle.tcp,
+                            &remote->addr, remote_connect_cb);
     if (rc) {
-        logger_log(LOG_ERR, "connect to %s error: %s", remote->client->target_addr, uv_strerror(rc));
+        logger_log(LOG_ERR, "connect to %s error: %s",
+                   remote->client->target_addr, uv_strerror(rc));
         request_ack(remote->client, S5_REP_NETWORK_UNREACHABLE);
     }
 }
@@ -184,7 +190,8 @@ remote_send_cb(uv_write_t *req, int status) {
         if (verbose) {
             char addrbuf[INET6_ADDRSTRLEN + 1] = {0};
             uint16_t port = ip_name(&client->addr, addrbuf, sizeof addrbuf);
-            logger_log(LOG_ERR, "%s:%d -> failed: %s", addrbuf, port, client->target_addr, uv_strerror(status));
+            logger_log(LOG_ERR, "%s:%d -> failed: %s", addrbuf, port,
+                       client->target_addr, uv_strerror(status));
         }
     }
 }
@@ -200,9 +207,11 @@ remote_recv_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
     if (nread > 0) {
         uv_read_stop(&remote->handle.stream);
         forward_to_client(client, buf->base, nread);
+
     } else if (nread < 0){
         if (nread != UV_EOF && verbose) {
-            logger_log(LOG_ERR, "receive from %s failed: %s", client->target_addr, uv_strerror(nread));
+            logger_log(LOG_ERR, "receive from %s failed: %s",
+                       client->target_addr, uv_strerror(nread));
         }
         close_client(client);
         close_remote(remote);
