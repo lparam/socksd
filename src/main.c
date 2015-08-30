@@ -45,7 +45,7 @@ static const struct option _lopts[] = {
 
 static void
 print_usage(const char *prog) {
-    printf("socksd Version: %s Maintained by Ken <ken.i18n@gmail.com>\n", SOCKSD_VER);
+    printf("socksd Version: %s Maintained by lparam\n", SOCKSD_VER);
     printf("Usage: %s [-l bind] [-p pidfile] [-c concurrency] [-t timeout] -s [signal] [-nhvV]\n\n", prog);
     printf("Options:\n");
     puts("  -h, --help\t\t : this help\n"

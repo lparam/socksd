@@ -1,9 +1,3 @@
-#
-# (C) Copyright 2000-2015
-# Ken <ken.i18n@gmail.com>
-#
-
-#########################################################################
 
 ifneq ($(OBJTREE),$(SRCTREE))
 ifeq ($(CURDIR),$(SRCTREE))
@@ -81,4 +75,3 @@ endif
 $(obj)%.o:	%.c
 	$(shell [ -d $(dir $@) ] || mkdir -p $(dir $@))
 	$(CCC) -c $< -o $(cobj)
-
