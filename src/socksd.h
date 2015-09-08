@@ -7,7 +7,7 @@
 #include "resolver.h"
 
 
-#define SOCKSD_VERSION      "0.2.0"
+#define SOCKSD_VERSION      "0.2.1"
 #define SOCKSD_VER          "socksd/" SOCKSD_VERSION
 
 
@@ -64,5 +64,6 @@ void close_loop(uv_loop_t *loop);
 
 int verbose;
 uint16_t idle_timeout;
+uv_key_t thread_resolver_key;
 
 #endif // for #ifndef _SOCKSD_H

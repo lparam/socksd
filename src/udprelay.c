@@ -22,7 +22,7 @@ struct target_context {
     struct sockaddr         dest_addr;
     uint16_t                dest_port;
     uv_timer_t             *timer;
-    struct dns_query       *addr_query;
+    struct dns_query       *host_query;
     int                     header_len;
     uint8_t                *buf;
     ssize_t                 buflen;
@@ -31,6 +31,7 @@ struct target_context {
 
 extern int verbose;
 extern uint16_t idle_timeout;
+extern uv_key_t thread_resolver_key;
 static uv_mutex_t mutex;
 static struct cache *cache;
 
@@ -79,54 +80,10 @@ close_target(struct target_context *target) {
     }
 }
 
-static int
-parse_target_address(const uint8_t atyp, const char *addrbuf, struct sockaddr *addr, char *host) {
-    int addrlen;
-    uint16_t portlen = 2; // network byte order port number, 2 bytes
-    union {
-        struct sockaddr addr;
-        struct sockaddr_in addr4;
-        struct sockaddr_in6 addr6;
-    } dest;
-
-    memset(&dest, 0, sizeof(dest));
-
-    if (atyp == S5_ATYP_IPV4) {
-        size_t in_addr_len = sizeof(struct in_addr); // 4 bytes for IPv4 address
-        dest.addr4.sin_family = AF_INET;
-        memcpy(&dest.addr4.sin_addr, addrbuf, in_addr_len);
-        memcpy(&dest.addr4.sin_port, addrbuf + in_addr_len, portlen);
-        addrlen = 4 + portlen;
-
-    } else if (atyp == S5_ATYP_HOST) {
-        uint8_t namelen = *(uint8_t *)(addrbuf); // 1 byte of name length
-        if (namelen > 0xFF) {
-            return -1;
-        }
-        memcpy(&dest.addr4.sin_port, addrbuf + 1 + namelen, portlen);
-        memcpy(host, addrbuf + 1, namelen);
-        host[namelen] = '\0';
-        addrlen = 1 + namelen + portlen;
-
-    } else if (atyp == S5_ATYP_IPV6) {
-        size_t in6_addr_len = sizeof(struct in6_addr); // 16 bytes for IPv6 address
-        memcpy(&dest.addr6.sin6_addr, addrbuf, in6_addr_len);
-        memcpy(&dest.addr6.sin6_port, addrbuf + in6_addr_len, portlen);
-        addrlen = 16 + portlen;
-
-    } else {
-        return 0;
-    }
-
-    memcpy(addr, &dest.addr, sizeof(*addr));
-    return addrlen;
-}
-
 static void
 target_alloc_cb(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf) {
     struct target_context *target = handle->data;
     buf->base = malloc(suggested_size) + target->header_len;
-    memset(buf->base - target->header_len, 0, suggested_size);
     buf->len = suggested_size - target->header_len;
 }
 
@@ -193,7 +150,7 @@ target_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *buf, const struc
             uint16_t src_port = 0, dst_port = 0;
             src_port = ip_name(addr, src, sizeof src);
             dst_port = ip_name(&target->client_addr, dst, sizeof dst);
-            logger_log(LOG_INFO, "%s:%d -> %s:%d", src, src_port, dst, dst_port);
+            logger_log(LOG_INFO, "%s:%d <- %s:%d", dst, dst_port, src, src_port);
         }
 
         forward_to_client(target, m, mlen);
@@ -210,6 +167,7 @@ target_send_cb(uv_udp_send_t *req, int status) {
         logger_log(LOG_ERR, "forward to target failed: %s", uv_strerror(status));
     }
     uv_buf_t *buf = (uv_buf_t *)(req + 1);
+    // free client recv buffer
     free(buf->base);
     free(req);
 }
@@ -224,7 +182,9 @@ forward_to_target(struct target_context *target, uint8_t *data, ssize_t len) {
         dst_port = ip_name(&target->dest_addr, dst, sizeof dst);
         logger_log(LOG_INFO, "%s:%d -> %s:%d", src, src_port, dst, dst_port);
     }
-    uv_udp_send_t *write_req = malloc(sizeof(*write_req) + sizeof(uv_buf_t));
+
+    ssize_t sz = sizeof(uv_udp_send_t) + sizeof(uv_buf_t);
+    uv_udp_send_t *write_req = malloc(sz);
     uv_buf_t *buf = (uv_buf_t *)(write_req + 1);
     buf->base = (char *)data;
     buf->len = len;
@@ -239,16 +199,85 @@ resolve_cb(struct sockaddr *addr, void *data) {
         target->header_len = addr->sa_family == AF_INET ? IPV4_HEADER_LEN : IPV6_HEADER_LEN;
         target->dest_addr = *addr;
         forward_to_target(target, target->buf, target->buflen);
+        target->buf = NULL;
+        target->buflen = 0;
 
     } else {
-        logger_stderr("resolve failed.");
+        free(target->buf);
+        logger_log(LOG_ERR, "[udp] resolve failed: %s", resolver_error(target->host_query));
     }
 }
 
 static void
 resolve_target(struct target_context *target, char *addr, uint16_t port) {
-    struct resolver_context *ctx = target->server_handle->loop->data;
-    target->addr_query = resolver_query(ctx, addr, port, resolve_cb, target);
+    if (verbose) {
+        logger_log(LOG_INFO, "resolve %s", addr);
+    }
+    struct resolver_context *ctx = uv_key_get(&thread_resolver_key);
+    target->host_query = resolver_query(ctx, addr, port, resolve_cb, target);
+}
+
+static int
+parse_target_address(const uint8_t atyp, const char *addrbuf, struct sockaddr *addr, char *host) {
+    int addrlen;
+    uint16_t portlen = 2; // network byte order port number, 2 bytes
+    union {
+        struct sockaddr addr;
+        struct sockaddr_in addr4;
+        struct sockaddr_in6 addr6;
+    } dest;
+
+    memset(&dest, 0, sizeof(dest));
+
+    if (atyp == S5_ATYP_IPV4) {
+        size_t in_addr_len = sizeof(struct in_addr); // 4 bytes for IPv4 address
+        dest.addr4.sin_family = AF_INET;
+        memcpy(&dest.addr4.sin_addr, addrbuf, in_addr_len);
+        memcpy(&dest.addr4.sin_port, addrbuf + in_addr_len, portlen);
+        addrlen = 4 + portlen;
+
+    } else if (atyp == S5_ATYP_HOST) {
+        uint8_t namelen = *(uint8_t *)(addrbuf); // 1 byte of name length
+        if (namelen > 0xFF) {
+            return -1;
+        }
+        memcpy(&dest.addr4.sin_port, addrbuf + 1 + namelen, portlen);
+        memcpy(host, addrbuf + 1, namelen);
+        host[namelen] = '\0';
+        addrlen = 1 + namelen + portlen;
+
+    } else if (atyp == S5_ATYP_IPV6) {
+        size_t in6_addr_len = sizeof(struct in6_addr); // 16 bytes for IPv6 address
+        memcpy(&dest.addr6.sin6_addr, addrbuf, in6_addr_len);
+        memcpy(&dest.addr6.sin6_port, addrbuf + in6_addr_len, portlen);
+        addrlen = 16 + portlen;
+
+    } else {
+        return 0;
+    }
+
+    memcpy(addr, &dest.addr, sizeof(*addr));
+    return addrlen;
+}
+
+static void
+cache_log(uint8_t atyp, const struct sockaddr *src_addr, const struct sockaddr *dst_addr,
+            const char *host, uint16_t port, int hit) {
+    char src[INET6_ADDRSTRLEN + 1] = {0};
+    char dst[INET6_ADDRSTRLEN + 1] = {0};
+    uint16_t src_port = 0, dst_port = 0;
+    char *hint = hit ? "hit" : "miss";
+    if (verbose) {
+        src_port = ip_name(src_addr, src, sizeof src);
+        if (atyp == S5_ATYP_HOST) {
+            logger_log(hint ? LOG_INFO : LOG_WARNING, "[udp] cache %s: %s:%d -> %s:%d",
+              hint, src, src_port, host, ntohs(port));
+        } else {
+            dst_port = ip_name(dst_addr, dst, sizeof dst);
+            logger_log(hint ? LOG_INFO : LOG_WARNING, "[udp] cache %s: %s:%d -> %s:%d",
+              hint, src, src_port, dst, dst_port);
+        }
+    }
 }
 
 /*
@@ -271,12 +300,15 @@ client_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *buf, const struc
             logger_log(LOG_ERR, "don't support frag: %d", frag);
             goto err;
         }
+        memset(&dest_addr, 0, sizeof(dest_addr));
         uint8_t atyp = (uint8_t)buf->base[3];
         int addrlen = parse_target_address(atyp, buf->base + 4, &dest_addr, host);
         if (addrlen < 1) {
             logger_log(LOG_ERR, "unsupported address type: 0x%02x", atyp);
             goto err;
         }
+
+        uint16_t port = (*(uint16_t *)(buf->base + 4 + addrlen - 2));
 
         char key[KEY_BYTES + 1] = {0};
         md5((char*)addr, sizeof(*addr), key);
@@ -286,6 +318,8 @@ client_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *buf, const struc
         cache_lookup(cache, key, (void *)&target);
         uv_mutex_unlock(&mutex);
         if (target == NULL) {
+            cache_log(atyp, addr, &dest_addr, host, port, 0);
+
             target = new_target();
             target->client_addr = *addr;
             target->server_handle = handle;
@@ -303,11 +337,12 @@ client_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *buf, const struc
             uv_mutex_lock(&mutex);
             cache_insert(cache, target->key, (void *)target);
             uv_mutex_unlock(&mutex);
+
+        } else {
+            cache_log(atyp, addr, &dest_addr, host, port, 1);
         }
-        target->dest_addr = dest_addr;
         reset_timer(target);
 
-        uint16_t port = (*(uint16_t *)(buf->base + 4 + addrlen - 2));
         uint8_t *m = (uint8_t*)buf->base;
         ssize_t mlen = nread - 4 - addrlen;
         memmove(m, m + 4 + addrlen, mlen);
@@ -316,6 +351,7 @@ client_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *buf, const struc
 
         case S5_ATYP_IPV4:
         case S5_ATYP_IPV6:
+            target->dest_addr = dest_addr;
             target->header_len = dest_addr.sa_family == AF_INET ? IPV4_HEADER_LEN : IPV6_HEADER_LEN;
             forward_to_target(target, m, mlen);
             break;

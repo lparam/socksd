@@ -87,15 +87,13 @@ static void
 dns_query_a4_cb(struct dns_ctx *dns, struct dns_rr_a4 *result, void *data) {
     struct dns_query *query = (struct dns_query *)data;
 
-    if (result == NULL) {
-        if (verbose) {
-            logger_log(LOG_ERR, "IPv4 resolver: %s", dns_strerror(dns_status(dns)));
-        }
-    } else if (result->dnsa4_nrr > 0) {
-        query->responses = realloc(query->responses, (query->response_count + result->dnsa4_nrr) * sizeof(struct sockaddr *));
+    if (result != NULL && result->dnsa4_nrr > 0) {
+        query->responses = realloc(query->responses,
+          (query->response_count + result->dnsa4_nrr) * sizeof(struct sockaddr *));
         query->response_count = result->dnsa4_nrr;
         for (int i = 0; i < result->dnsa4_nrr; i++) {
             struct sockaddr_in *sa = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
+            memset(sa, 0, sizeof(struct sockaddr_in));
             sa->sin_family = AF_INET;
             sa->sin_addr = result->dnsa4_addr[i];
             sa->sin_port = query->port;
@@ -115,15 +113,12 @@ static void
 dns_query_a6_cb(struct dns_ctx *dns, struct dns_rr_a6 *result, void *data) {
     struct dns_query *query = (struct dns_query *)data;
 
-    if (result == NULL) {
-        if (verbose) {
-            logger_log(LOG_ERR, "IPv6 resolver: %s", dns_strerror(dns_status(dns)));
-        }
-    } else if (result->dnsa6_nrr > 0) {
+    if (result != NULL && result->dnsa6_nrr > 0) {
         query->responses = realloc(query->responses, (query->response_count + result->dnsa6_nrr) * sizeof(struct sockaddr *));
         query->response_count = result->dnsa6_nrr;
         for (int i = 0; i < result->dnsa6_nrr; i++) {
             struct sockaddr_in6 *sa = (struct sockaddr_in6 *)malloc(sizeof(struct sockaddr_in6));
+            memset(sa, 0, sizeof(struct sockaddr_in6));
             sa->sin6_family = AF_INET6;
             sa->sin6_addr = result->dnsa6_addr[i];
             sa->sin6_port = query->port;
@@ -273,4 +268,9 @@ resolver_cancel(struct dns_query *query) {
     }
 
     free(query);
+}
+
+const char*
+resolver_error(struct dns_query *query) {
+    return dns_strerror(dns_status(query->context->dns));
 }
