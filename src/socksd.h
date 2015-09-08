@@ -7,7 +7,7 @@
 #include "resolver.h"
 
 
-#define SOCKSD_VERSION      "0.2.0"
+#define SOCKSD_VERSION      "0.2.1"
 #define SOCKSD_VER          "socksd/" SOCKSD_VERSION
 
 
