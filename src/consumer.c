@@ -93,7 +93,7 @@ consumer_start(void *arg) {
 
     char name[24] = {0};
     sprintf(name, "consumer-%d", ctx->index + 1);
-    pthread_setname_np(pthread_self(), name);
+    prctl(PR_SET_NAME, name, 0, 0, 0);
 
     loop = malloc(sizeof(uv_loop_t));
     uv_loop_init(loop);
